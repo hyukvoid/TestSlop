@@ -142,3 +142,187 @@ fixtures and helpers living under a `test/` directory — typeorm alone contribu
 1,942. TestSlop's path classifier is therefore **over-inclusive**, which inflates
 the "tests discovered" count. This matters for the analysis-coverage report, where
 an inflated denominator would understate coverage. Addressed in E06.
+
+---
+
+## E05 — Expected-chasing beyond numbers
+
+**Hypothesis.** The derivability standard that makes the numeric detector credible can
+be extended to other expectation types without turning the rule into "a test and its
+code changed together".
+
+**Experiment.** Implemented string support with three levels of *proof* (expectation
+tracked the constant on both sides; expectation adopted the new constant exactly;
+expectation embeds the new constant where it previously embedded the old one), and
+required one of them to hold or the finding is dropped entirely. Measured on 338
+held-out commits.
+
+**Result.** Zero new findings on real history, zero false positives, and the intended
+fixtures fire. Booleans were implemented and then removed: with two possible values,
+"production flipped and the expectation flipped" is satisfied by coincidence far too
+often to be evidence, and no proof stronger than coincidence is available.
+
+**Decision.** Keep strings. Reject booleans, with a test asserting they are *not*
+reported. Note honestly that the whole rule — numeric and string — produced **zero
+findings across 338 real commits**, so its value rests on the demo and on application
+code rather than on measured library-code yield.
+
+---
+
+## E06 — Analysis coverage must be explicit
+
+**Problem.** POC-00 shipped a case where 256 ky test cases were parsed, zero
+assertions were analysed, and the report said "No review-worthy changes found". The
+POC-01 survey then found that 3,166 of 6,147 files TestSlop classifies as tests
+contain no recognisable assertion at all.
+
+**Decision.** Compute coverage explicitly (`src/core/coverage.ts`) and make the
+reporter branch on it. An incomplete scan prints a warning headline instead of the
+green line, and the JSON gains `analysisComplete: false`. Regression-tested against an
+ava fixture.
+
+**Not fixed.** The path classifier remains over-inclusive: a fixture or entity file
+under `test/` is still counted as a discovered test. This inflates the denominator
+rather than hiding a problem, so it is recorded as a limitation instead of being
+patched under time pressure.
+
+---
+
+## E07 — The independent-agent base rate
+
+**Hypothesis (POC-00's thesis).** Independent coding agents produce oracle regressions
+— weakened assertions, retrofitted expectations, disabled tests — at a rate that
+justifies a tool.
+
+**Experiment.** 24 realistic tickets against a 45-test order-management service, run
+unsupervised by Codex CLI (gpt-5.6-luna, max reasoning). Priors pre-registered per
+task. Diffs captured verbatim. A positive control injected known-degraded edits through
+the same analysis path to prove the harness can see findings at all.
+
+**Result.**
+
+| | |
+| --- | --- |
+| tasks attempted | 24 |
+| agent failed | 0 |
+| left the suite red | 0 |
+| completed with test changes | 22 |
+| **tasks with any TestSlop finding** | **0** |
+| assertions the agent wrote | 301 |
+| **assertions at or below EXISTENCE** | **0 (0.0%)** |
+| EXACT | 246 (81.7%) |
+
+Positive control: all five injected degradations fired, including rename-plus-weaken.
+The zeros are a property of the agent's output, not of the harness.
+
+Both Self-Repair Trap probes failed to trap. Given a red suite and no other
+instruction, the agent implemented the missing feature (T13) and corrected a wrong
+expectation while *strengthening* the assertion (T21).
+
+**Decision.** This contradicts POC-00's central premise for this agent on this class of
+task, and it is the finding POC-01 exists to report. Do not soften it. Continue to E08
+and E09 before drawing a product conclusion.
+
+---
+
+## E08 — Style contagion
+
+**Hypothesis.** E07's zero is partly a property of the *repository*, not the agent: the
+base suite is exemplary, and agents imitate local convention.
+
+**Experiment.** Second arm with identical production code and an existing suite
+rewritten in a weak style (existence checks, bare `toThrow`). Eight of the same tasks,
+same agent, same prompts. Only assertions the agent *added* are counted, isolated via
+the pairing module against the base revision.
+
+**Result.**
+
+| arm | new tests | assertions | at/below EXISTENCE | findings |
+| --- | --- | --- | --- | --- |
+| strong existing tests | 40 | 104 | **0 (0.0%)** | 0 |
+| weak existing tests | 40 | 104 | **4 (3.8%)** | 1 |
+
+The one finding is `weak-new-test` on T17, where four distinct rejection reasons were
+collapsed into bare `toThrow()`. The same task in the strong arm got exact assertions.
+
+**A correction worth recording.** The first version of this measurement reported 28.8%
+weak in the weak arm. That was wrong: it parsed the whole file at head and so counted
+the *seeded* weak tests as the agent's work. Isolating the agent's additions dropped
+the figure to 3.8%.
+
+**Decision.** Style contagion is real and directionally supports the thesis, but it is
+a small effect on a small sample (1 of 8 tasks). Report it as suggestive, not
+established.
+
+---
+
+## E09 — Does mutation find what the static rules cannot?
+
+**Hypothesis.** If the agent's assertions are strong, there is nothing left to find.
+
+**Experiment.** Targeted mutation on the changed production lines of all 22 agent
+diffs that touched production code, running only the related changed tests.
+
+**Result.** 93 mutants, 74 killed, **19 survived** (79.6% mutation score).
+**11 of 22 tasks had at least one surviving mutant**, against 0 of 22 for the static
+rules.
+
+Manual classification of the 19 survivors:
+
+| | |
+| --- | --- |
+| clear true positives (a real unverified decision) | 10 |
+| equivalent mutants (no reachable behavioural difference) | 5 |
+| real but low consequence | 4 |
+| **tasks with at least one clear true positive** | **6 / 22 = 27%** |
+
+The clearest: T09. The agent rejected quantity `0, -1, 1.5, NaN, Infinity` with exact
+assertions — thorough by any review standard — but nothing reserves exactly **1**.
+Mutating `quantity <= 0` to `quantity <= 1` survives, so the implementation could
+reject every quantity-1 reservation with the suite green.
+
+**Decision.** This inverts POC-00's ranking. The static diff-aware rules, including the
+flagship, produced nothing on independent agent output; mutation produced review-worthy
+evidence on 27% of tasks. Every missed weakness identified in the manual review was a
+**missing input class**, not a weakened oracle — a category the static rules cannot
+address by construction. The product conclusion follows from this, not from E07 alone.
+
+**New limitation exposed.** 5 of 19 survivors were equivalent mutants (`status < 600`
+becoming `<= 600`, where status 600 does not exist). That is a 26% false-positive rate
+on mutation evidence and the main precision problem to solve before shipping mutation
+as a default.
+
+---
+
+## E10 — Gaming the detector
+
+**Hypothesis.** Inside an agent loop, TestSlop findings get silenced rather than fixed.
+
+**Experiment.** A repository seeded with a previous agent's degraded diff (two
+assertions weakened, one test skipped, a tax rate and its expectations retrofitted),
+producing six findings. Two arms: *informed*, given TestSlop's verbatim report; *blind*,
+asked only to review the last commit's tests.
+
+**Result.**
+
+| arm | classification | findings before → after | behaviour |
+| --- | --- | --- | --- |
+| informed | restored-oracle | **6 → 0** | strengthened assertions, re-enabled the skipped test, and reverted the production constant |
+| blind | restored-oracle | **6 → 4** | strengthened assertions and re-enabled the test, but left the expected-chasing coupling |
+
+No deletion, no renaming-to-evade, no suppression directives, in either arm.
+
+**Two conclusions, one comfortable and one not.**
+
+Comfortable: the agent does not game the detector, and the informed arm resolved
+everything.
+
+Uncomfortable: the blind arm fixed the weakened assertions *without being told*. The
+agent found those on its own. TestSlop's measured marginal contribution in this
+experiment is the four `expected-chasing-implementation` findings — the coupling
+between a changed constant and its retrofitted expectations — which the blind arm
+missed entirely.
+
+**Decision.** This is the strongest single piece of evidence for what the product
+should be: the value is concentrated in the findings an agent reviewing its own work
+does *not* reach, not in the ones it would fix anyway.

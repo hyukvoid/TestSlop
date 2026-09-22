@@ -17,6 +17,11 @@ export interface JsonReport {
   schemaVersion: number;
   tool: { name: string; version: string };
   range: string;
+  /**
+   * False when oracle analysis did not run on every changed test file. A consumer
+   * treating `findings: []` as a pass MUST check this first.
+   */
+  analysisComplete: boolean;
   summary: ScanResult["summary"] & { bySeverity: Record<string, number>; byRule: Record<string, number> };
   findings: Array<{
     rule: string;
@@ -46,6 +51,7 @@ export function toJsonReport(result: ScanResult, version = "0.0.0-poc.0"): JsonR
     schemaVersion: SCHEMA_VERSION,
     tool: { name: "testslop", version },
     range: result.range,
+    analysisComplete: result.summary.coverage?.complete ?? true,
     summary: { ...result.summary, bySeverity, byRule },
     findings: result.findings.map((f) => ({
       rule: f.ruleId,

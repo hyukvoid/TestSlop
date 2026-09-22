@@ -9,6 +9,7 @@
  */
 
 import type { Finding, ScanResult, Severity } from "../core/types.ts";
+import type { AnalysisCoverage } from "../core/coverage.ts";
 
 const useColor = (): boolean => {
   if (process.env.NO_COLOR) return false;
@@ -112,13 +113,20 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
   out.push(`Changed prod      ${result.summary.productionFilesChanged} file(s)`);
   out.push("");
 
-  const notAnalysed = result.summary.notAnalysed ?? [];
+  const coverage = result.summary.coverage;
 
   if (result.findings.length === 0) {
-    out.push(c.green("No review-worthy changes to the test oracle found."));
-    if (notAnalysed.length > 0) {
+    // A scan that analysed nothing must never read like a scan that found nothing.
+    if (coverage && !coverage.complete) {
+      out.push(c.yellow(c.bold("No findings — but oracle analysis did not run on every changed test file.")));
       out.push("");
-      out.push(renderNotAnalysed(notAnalysed));
+      out.push(renderCoverage(coverage, { force: true }));
+    } else {
+      out.push(c.green("No review-worthy changes to the test oracle found."));
+      if (coverage) {
+        out.push("");
+        out.push(renderCoverage(coverage));
+      }
     }
     out.push("");
     out.push(c.dim(`Scanned in ${result.summary.durationMs} ms.`));
@@ -152,9 +160,9 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
   if (evidence > 0) {
     out.push(c.magenta(`${evidence} backed by an executed mutation experiment`));
   }
-  if (notAnalysed.length > 0) {
+  if (coverage) {
     out.push("");
-    out.push(renderNotAnalysed(notAnalysed));
+    out.push(renderCoverage(coverage));
   }
   out.push("");
   const total = result.summary.durationMs + (result.summary.mutationDurationMs ?? 0);
@@ -171,17 +179,52 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
 }
 
 /**
- * Coverage caveats. A scan that analysed nothing must not read like a scan that
- * found nothing, so this block is printed in both the empty and non-empty cases.
+ * Analysis coverage block.
+ *
+ * Printed compactly when coverage is complete, and prominently with a warning when
+ * it is not. The warning case is the whole reason this exists: without it, a
+ * repository whose assertion API is unsupported gets a green "no problems found".
  */
-function renderNotAnalysed(entries: Array<{ file: string; reason: string }>): string {
+function renderCoverage(coverage: AnalysisCoverage, opts: { force?: boolean } = {}): string {
   const lines: string[] = [];
-  lines.push(c.yellow(`Not fully analysed (${entries.length} file${entries.length === 1 ? "" : "s"}):`));
-  for (const e of entries.slice(0, 6)) {
-    lines.push(c.dim(`  ${e.file}`));
-    lines.push(c.dim(`    ${e.reason}`));
+
+  if (coverage.complete && !opts.force) {
+    lines.push(
+      c.dim(
+        `Analysis coverage   ${coverage.testsAnalysed}/${coverage.testsDiscovered} changed tests, ` +
+          `${coverage.assertionsRecognised} assertions  (${coverage.frameworks.join(", ") || "none"})`,
+      ),
+    );
+    return lines.join("\n");
   }
-  if (entries.length > 6) lines.push(c.dim(`  … and ${entries.length - 6} more`));
+
+  lines.push(c.bold("Analysis coverage"));
+  lines.push("");
+  lines.push(`  Changed test files     ${coverage.testFilesChanged}`);
+  lines.push(`  Tests discovered       ${coverage.testsDiscovered}`);
+  lines.push(`  Tests analysed         ${coverage.testsAnalysed}`);
+  lines.push(`  Assertions recognised  ${coverage.assertionsRecognised}`);
+
+  if (coverage.unanalysedFiles.length > 0) {
+    lines.push("");
+    lines.push(
+      c.yellow(
+        c.bold(
+          `  Warning: ${coverage.unanalysedFiles.length} changed test file${coverage.unanalysedFiles.length === 1 ? "" : "s"} contributed no analysable assertions.`,
+        ),
+      ),
+    );
+    lines.push(c.yellow("  Oracle-regression analysis did not run on them."));
+    lines.push("");
+    for (const f of coverage.unanalysedFiles.slice(0, 5)) {
+      lines.push(`    ${f.file}  ${c.dim(`(${f.testsDiscovered} test${f.testsDiscovered === 1 ? "" : "s"}, framework: ${f.framework})`)}`);
+      if (f.problem) lines.push(c.dim(`      ${f.problem}`));
+    }
+    if (coverage.unanalysedFiles.length > 5) {
+      lines.push(c.dim(`    … and ${coverage.unanalysedFiles.length - 5} more`));
+    }
+  }
+
   return lines.join("\n");
 }
 

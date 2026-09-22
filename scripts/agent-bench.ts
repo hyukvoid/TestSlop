@@ -29,9 +29,21 @@ import type { Finding } from "../src/core/types.ts";
 
 const exec = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "..");
-const BASE = path.join(ROOT, "corpus", "agent-base");
-const RUNS = path.join(ROOT, "work", "agentbench");
-const RESULTS = path.join(ROOT, "work", "agentbench-results");
+
+/**
+ * Which base repository to materialise.
+ *
+ * `weak` is the style-contagion arm: identical production code, but the existing test
+ * suite is written with existence checks instead of exact expectations. It exists to
+ * separate "this agent writes strong assertions" from "this agent imitates the
+ * repository it is working in".
+ */
+const BASES = {
+  strong: path.join(ROOT, "corpus", "agent-base"),
+  weak: path.join(ROOT, "corpus", "agent-base-weak"),
+} as const;
+
+export type BaseVariant = keyof typeof BASES;
 
 const GIT_ID = [
   "-c", "user.name=Benchmark",
@@ -51,6 +63,8 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 export interface AgentRunRecord {
   taskId: string;
+  /** Which base test-style variant this run used. */
+  variant: BaseVariant;
   category: string;
   prior: string;
   priorReason: string;
@@ -79,11 +93,12 @@ export interface AgentRunRecord {
     | "completed";            // agent finished, suite green
 }
 
-async function materialise(task: AgentTask): Promise<string> {
-  const repo = path.join(RUNS, task.id);
+async function materialise(task: AgentTask, variant: BaseVariant): Promise<string> {
+  const runs = variant === "weak" ? path.join(ROOT, "work", "agentbench-weak") : path.join(ROOT, "work", "agentbench");
+  const repo = path.join(runs, task.id);
   await rm(repo, { recursive: true, force: true });
   await mkdir(repo, { recursive: true });
-  await cp(BASE, repo, { recursive: true });
+  await cp(BASES[variant], repo, { recursive: true });
 
   // The base README describes the benchmark itself; remove it so the agent is not
   // told it is being measured.
@@ -170,6 +185,8 @@ async function runTests(repo: string): Promise<{ pass: boolean; summary: string 
 
 export interface BenchOptions {
   only?: string[];
+  /** Which base repository to use. Defaults to the strong-style suite. */
+  variant?: BaseVariant;
   model?: string;
   timeoutMs?: number;
   retry?: boolean;
@@ -180,7 +197,8 @@ const AGENT_TIMEOUT_MS = 900_000;
 
 export async function runTask(task: AgentTask, opts: BenchOptions = {}): Promise<AgentRunRecord> {
   const progress = opts.onProgress ?? (() => {});
-  const repo = await materialise(task);
+  const variant: BaseVariant = opts.variant ?? "strong";
+  const repo = await materialise(task, variant);
   const interventions: string[] = [];
 
   const codexArgs = [
@@ -249,6 +267,7 @@ export async function runTask(task: AgentTask, opts: BenchOptions = {}): Promise
 
   const record: AgentRunRecord = {
     taskId: task.id,
+    variant,
     category: task.category,
     prior: task.prior,
     priorReason: task.priorReason,
@@ -269,8 +288,9 @@ export async function runTask(task: AgentTask, opts: BenchOptions = {}): Promise
     outcome,
   };
 
-  await mkdir(RESULTS, { recursive: true });
-  await writeFile(path.join(RESULTS, `${task.id}.json`), JSON.stringify(record, null, 2), "utf8");
+  const resultsDir = variant === "weak" ? path.join(ROOT, "work", "agentbench-results-weak") : path.join(ROOT, "work", "agentbench-results");
+  await mkdir(resultsDir, { recursive: true });
+  await writeFile(path.join(resultsDir, `${task.id}.json`), JSON.stringify(record, null, 2), "utf8");
 
   progress(
     `${task.id}: ${outcome}  tests=${tests.pass ? "green" : "RED"}  ` +
@@ -285,6 +305,8 @@ async function main(): Promise<void> {
   const model = modelIdx >= 0 ? args[modelIdx + 1] : undefined;
   const retry = args.includes("--retry");
   const skipExisting = args.includes("--skip-existing");
+  const variant: BaseVariant = args.includes("--weak") ? "weak" : "strong";
+  const RESULTS = variant === "weak" ? path.join(ROOT, "work", "agentbench-results-weak") : path.join(ROOT, "work", "agentbench-results");
   const only = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--model");
 
   const tasks = only.length ? AGENT_TASKS.filter((t) => only.includes(t.id)) : AGENT_TASKS;
@@ -299,6 +321,7 @@ async function main(): Promise<void> {
     try {
       await runTask(task, {
         ...(model ? { model } : {}),
+        variant,
         retry,
         onProgress: (l) => process.stderr.write(l + "\n"),
       });

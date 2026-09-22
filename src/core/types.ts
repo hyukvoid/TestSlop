@@ -356,6 +356,8 @@ export interface ScanSummary {
    * never silently confused with "nothing to find".
    */
   notAnalysed: Array<{ file: string; reason: string }>;
+  /** Explicit analysis coverage. See src/core/coverage.ts. */
+  coverage: import("./coverage.ts").AnalysisCoverage;
 }
 
 export interface ScanResult {

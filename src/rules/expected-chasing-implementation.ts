@@ -99,6 +99,67 @@ function multisetDifference(from: number[], remove: number[]): number[] {
   return out;
 }
 
+interface StringChange {
+  before: string;
+  after: string;
+  line: number;
+  enclosing?: string;
+}
+
+/**
+ * String constants that moved, per enclosing function.
+ *
+ * POC-01 expansion. Strings were chosen as the first non-numeric expectation type
+ * because they admit the same standard of proof as numbers: if the test's new
+ * expected string is *character-for-character* the implementation's new string
+ * constant, and the old expected string was the old one, the expectation demonstrably
+ * tracks the code rather than a specification. There is nothing to infer.
+ *
+ * Booleans were considered and rejected: with only two possible values, "production
+ * flipped true->false and the test expectation flipped too" is satisfied by
+ * coincidence far too often to carry evidence. Recorded in docs/EVIDENCE-LOG.md E05.
+ */
+export function stringChanges(beforeSignals: ProductionSignal[], afterSignals: ProductionSignal[]): StringChange[] {
+  const groupBy = (sigs: ProductionSignal[]): Map<string, ProductionSignal[]> => {
+    const m = new Map<string, ProductionSignal[]>();
+    for (const s of sigs) {
+      if (s.kind !== "string-literal") continue;
+      const key = s.enclosing ?? "<module>";
+      const list = m.get(key) ?? [];
+      list.push(s);
+      m.set(key, list);
+    }
+    return m;
+  };
+
+  const b = groupBy(beforeSignals);
+  const a = groupBy(afterSignals);
+  const out: StringChange[] = [];
+
+  for (const [fn, afterList] of a) {
+    const beforeVals = (b.get(fn) ?? []).map((s) => s.text);
+    const afterVals = afterList.map((s) => s.text);
+    const removed = multisetDifferenceOf(beforeVals, afterVals);
+    const added = multisetDifferenceOf(afterVals, beforeVals);
+    if (removed.length === 1 && added.length === 1) {
+      const line = afterList.find((s) => s.text === added[0])?.line ?? afterList[0]?.line ?? 1;
+      out.push({ before: removed[0]!, after: added[0]!, line, enclosing: fn === "<module>" ? undefined : fn });
+    }
+  }
+  return out;
+}
+
+function multisetDifferenceOf<T>(from: T[], remove: T[]): T[] {
+  const pool = [...remove];
+  const out: T[] = [];
+  for (const v of from) {
+    const idx = pool.indexOf(v);
+    if (idx >= 0) pool.splice(idx, 1);
+    else out.push(v);
+  }
+  return out;
+}
+
 export function operatorChanges(beforeSignals: ProductionSignal[], afterSignals: ProductionSignal[]): OperatorChange[] {
   const pick = (sigs: ProductionSignal[]): string[] =>
     sigs.filter((s) => s.kind === "comparison-operator" || s.kind === "logical-operator").map((s) => s.text);
@@ -113,10 +174,11 @@ export function operatorChanges(beforeSignals: ProductionSignal[], afterSignals:
   return [];
 }
 
-/** Numeric expectations that changed inside a test, keyed to their assertion. */
+/** An expectation that changed inside a test, keyed to its assertion. */
 interface ExpectationChange {
-  before: number;
-  after: number;
+  kind: "numeric" | "string";
+  before: number | string;
+  after: number | string;
   assertionBefore: Assertion;
   assertionAfter: Assertion;
   line: number;
@@ -158,6 +220,44 @@ export function derivationOf(
   return undefined;
 }
 
+/**
+ * Proof, not inference, for string expectations.
+ *
+ * Two strengths of evidence, and nothing weaker is accepted:
+ *
+ *   both sides tracked   the expectation was the old constant and is now the new one
+ *   adopted              the expectation is now exactly the new constant
+ *
+ * If the new expected string merely differs from the old one, that is a normal
+ * consequence of changing a message and carries no information. Returning undefined
+ * in that case is what stops this expansion from degenerating into "a test and its
+ * code changed in the same commit".
+ */
+export function stringDerivationOf(
+  expectedBefore: string,
+  expectedAfter: string,
+  constBefore: string,
+  constAfter: string,
+): string | undefined {
+  if (expectedBefore === constBefore && expectedAfter === constAfter) {
+    return `expected string tracked the implementation constant exactly, before ("${constBefore}") and after ("${constAfter}")`;
+  }
+  if (expectedAfter === constAfter && expectedBefore !== constAfter) {
+    return `expected string is now character-for-character the implementation's new constant ("${constAfter}")`;
+  }
+  // A substring relationship is weaker but still checkable by a reviewer, e.g. the
+  // test asserts on a message that embeds the changed constant.
+  if (
+    constAfter.length >= 6 &&
+    expectedAfter.includes(constAfter) &&
+    !expectedBefore.includes(constAfter) &&
+    expectedBefore.includes(constBefore)
+  ) {
+    return `expected string embeds the implementation's new constant ("${constAfter}"), and previously embedded the old one`;
+  }
+  return undefined;
+}
+
 function expectationChanges(pairing: PairingResult): ExpectationChange[] {
   const out: ExpectationChange[] = [];
 
@@ -167,16 +267,25 @@ function expectationChanges(pairing: PairingResult): ExpectationChange[] {
     for (const pair of pairAssertions(bc.assertions, ac.assertions)) {
       const bArg = pair.before.args[0];
       const aArg = pair.after.args[0];
-      if (bArg?.numeric === undefined || aArg?.numeric === undefined) continue;
-      if (bArg.numeric === aArg.numeric) continue;
-      out.push({
-        before: bArg.numeric,
-        after: aArg.numeric,
+      if (!bArg || !aArg) continue;
+
+      const common = {
         assertionBefore: pair.before,
         assertionAfter: pair.after,
         line: pair.after.line,
         testName: ac.fullName,
-      });
+      };
+
+      if (bArg.numeric !== undefined && aArg.numeric !== undefined) {
+        if (bArg.numeric === aArg.numeric) continue;
+        out.push({ kind: "numeric", before: bArg.numeric, after: aArg.numeric, ...common });
+        continue;
+      }
+
+      if (bArg.string !== undefined && aArg.string !== undefined) {
+        if (bArg.string === aArg.string) continue;
+        out.push({ kind: "string", before: bArg.string, after: aArg.string, ...common });
+      }
     }
   }
   return out;
@@ -208,29 +317,50 @@ export const expectedChasingImplementation: Rule = {
         if (!prod?.before || !prod.after) continue;
 
         const consts = numericChanges(prod.before.signals, prod.after.signals);
+        const strings = stringChanges(prod.before.signals, prod.after.signals);
         const ops = operatorChanges(prod.before.signals, prod.after.signals);
-        if (consts.length === 0 && ops.length === 0) continue;
+        if (consts.length === 0 && strings.length === 0 && ops.length === 0) continue;
 
         for (const change of changes) {
-          // Look for an implementation constant change that explains this
-          // expectation change arithmetically.
           let derivation: string | undefined;
           let matchedConst: ConstantChange | undefined;
-          for (const c of consts) {
-            const d = derivationOf(change.before, change.after, c.before, c.after);
-            if (d) {
-              derivation = d;
-              matchedConst = c;
-              break;
+          let matchedString: StringChange | undefined;
+
+          if (change.kind === "numeric") {
+            // Look for an implementation constant change that explains this
+            // expectation change arithmetically.
+            for (const c of consts) {
+              const d = derivationOf(change.before as number, change.after as number, c.before, c.after);
+              if (d) {
+                derivation = d;
+                matchedConst = c;
+                break;
+              }
             }
+          } else {
+            // Strings admit only exact proof, never inference.
+            for (const s of strings) {
+              const d = stringDerivationOf(change.before as string, change.after as string, s.before, s.after);
+              if (d) {
+                derivation = d;
+                matchedString = s;
+                break;
+              }
+            }
+            // A string expectation with no exact match to a moved production string
+            // is not evidence of anything, so it is dropped rather than reported at
+            // low confidence. This is what keeps the expansion from becoming
+            // "the test and the code changed together".
+            if (!derivation) continue;
           }
 
           const anchor = matchedConst ?? consts[0];
+          const site = matchedString ?? anchor;
           const evidence: EvidenceBlock[] = [
             {
               label: `Production (${prodPath})`,
-              before: anchor ? `${anchor.enclosing ? anchor.enclosing + ": " : ""}${anchor.before}` : ops[0]?.before,
-              after: anchor ? `${anchor.enclosing ? anchor.enclosing + ": " : ""}${anchor.after}` : ops[0]?.after,
+              before: site ? `${site.enclosing ? site.enclosing + ": " : ""}${JSON.stringify(site.before)}` : ops[0]?.before,
+              after: site ? `${site.enclosing ? site.enclosing + ": " : ""}${JSON.stringify(site.after)}` : ops[0]?.after,
             },
             {
               label: "Test expectation",
@@ -253,10 +383,12 @@ export const expectedChasingImplementation: Rule = {
             file: testEntry.file.path,
             line: change.line,
             productionFile: prodPath,
-            productionLine: anchor?.line ?? ops[0]?.line,
+            productionLine: (matchedString ?? anchor)?.line ?? ops[0]?.line,
             testName: change.testName,
             message: derivation
-              ? `Expected value changed ${change.before} -> ${change.after} in lockstep with the implementation, and is arithmetically derivable from it.`
+              ? change.kind === "string"
+                ? `Expected string changed ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)} and is exactly the implementation''s new constant.`
+                : `Expected value changed ${change.before} -> ${change.after} in lockstep with the implementation, and is arithmetically derivable from it.`
               : `Expected value changed ${change.before} -> ${change.after} in the same changeset that changed the implementation it pins.`,
             rationale: derivation
               ? "When the new expectation can be computed from the new code, the test no longer provides an independent check of the requirement. Confirm the number came from the specification, not from running the code."

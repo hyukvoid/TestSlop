@@ -784,3 +784,99 @@ test${modifier}("removes undefined value headers", (t) => {
     expect(f!.severity).toBe("high");
   });
 });
+
+// ---------------------------------------------------------------------------
+// POC-01: expected-chasing beyond numbers
+// ---------------------------------------------------------------------------
+
+describe("expected-chasing-implementation: string expectations", () => {
+  const prod = (msg: string): string => `export function authenticate(token?: string) {
+  if (!token) {
+    return { status: 401, error: "${msg}" };
+  }
+  return { status: 200 };
+}
+`;
+  const test = (msg: string): string => `import { describe, expect, it } from "vitest";
+import { authenticate } from "./auth.ts";
+
+describe("authenticate", () => {
+  it("rejects a missing token", () => {
+    expect(authenticate().error).toBe("${msg}");
+  });
+});
+`;
+
+  it("reports an expectation that adopted the implementation's new string verbatim", async () => {
+    const findings = await scan([
+      { path: "src/auth.ts", before: prod("missing_token"), after: prod("token_absent") },
+      { path: "src/auth.test.ts", before: test("missing_token"), after: test("token_absent") },
+    ]);
+    const f = findings.find((x) => x.ruleId === "expected-chasing-implementation");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("high");
+    const derivation = f!.evidence.find((e) => e.label === "Derivation");
+    expect(derivation?.detail).toMatch(/tracked the implementation constant exactly/);
+  });
+
+  it("stays silent when the expected string does not match the implementation constant", async () => {
+    // The test's expectation changed and the production string changed, but the two
+    // are unrelated. Without exact proof this must not be reported, otherwise the
+    // rule degenerates into "a test and its code changed together".
+    const findings = await scan([
+      { path: "src/auth.ts", before: prod("missing_token"), after: prod("token_absent") },
+      { path: "src/auth.test.ts", before: test("missing_token"), after: test("something_else_entirely") },
+    ]);
+    expect(ruleIds(findings)).not.toContain("expected-chasing-implementation");
+  });
+
+  it("stays silent when only the production string changed", async () => {
+    const findings = await scan([
+      { path: "src/auth.ts", before: prod("missing_token"), after: prod("token_absent") },
+    ]);
+    expect(ruleIds(findings)).not.toContain("expected-chasing-implementation");
+  });
+
+  it("reports when the expectation embeds the new constant inside a larger message", async () => {
+    const p = (code: string): string => `export function explain(): string {
+  return "request failed: ${code}";
+}
+`;
+    const t = (code: string): string => `import { describe, expect, it } from "vitest";
+import { explain } from "./explain.ts";
+
+describe("explain", () => {
+  it("describes the failure", () => {
+    expect(explain()).toBe("request failed: ${code}");
+  });
+});
+`;
+    const findings = await scan([
+      { path: "src/explain.ts", before: p("bad_gateway"), after: p("upstream_timeout") },
+      { path: "src/explain.test.ts", before: t("bad_gateway"), after: t("upstream_timeout") },
+    ]);
+    expect(ruleIds(findings)).toContain("expected-chasing-implementation");
+  });
+});
+
+describe("expected-chasing-implementation: booleans are deliberately not supported", () => {
+  it("does not report a boolean expectation flip", async () => {
+    // Rejected during POC-01: with two possible values, "production flipped and the
+    // expectation flipped" happens by coincidence far too often to be evidence.
+    const prod = (v: string): string => `export function isEnabled(): boolean {\n  return ${v};\n}\n`;
+    const test = (v: string): string => `import { describe, expect, it } from "vitest";
+import { isEnabled } from "./flag.ts";
+
+describe("isEnabled", () => {
+  it("reports the flag", () => {
+    expect(isEnabled()).toBe(${v});
+  });
+});
+`;
+    const findings = await scan([
+      { path: "src/flag.ts", before: prod("true"), after: prod("false") },
+      { path: "src/flag.test.ts", before: test("true"), after: test("false") },
+    ]);
+    expect(ruleIds(findings)).not.toContain("expected-chasing-implementation");
+  });
+});

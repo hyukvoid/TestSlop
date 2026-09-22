@@ -24,6 +24,7 @@ import { parseProductionFile } from "../adapters/ts/parse-production.ts";
 import { parsePythonTestFile, parsePythonProductionFile, pythonAvailable } from "../adapters/python/index.ts";
 import { buildTestToProductionMap } from "./link.ts";
 import { pairTestCases, type PairingResult } from "./pairing.ts";
+import { computeCoverage } from "./coverage.ts";
 import { ALL_RULES, DEFAULT_RULES } from "../rules/index.ts";
 
 const SEVERITY_WEIGHT: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
@@ -252,6 +253,7 @@ export async function analyse(changeSet: ChangeSet, opts: AnalyseOptions = {}): 
       findings: findings.length,
       durationMs: Date.now() - started,
       notAnalysed,
+      coverage: computeCoverage(ctx),
     },
   };
 }
