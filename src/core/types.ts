@@ -205,7 +205,14 @@ export interface ImportRecord {
   resolved?: string;
 }
 
-export type Framework = "jest" | "vitest" | "node:test" | "pytest" | "ava" | "unknown";
+export type Framework =
+  | "jest"
+  | "vitest"
+  | "node:test"
+  | "pytest"
+  | "ava"
+  | "mocha-chai"
+  | "unknown";
 
 // ---------------------------------------------------------------------------
 // Production-side model
@@ -308,6 +315,12 @@ export interface AnalysisContext {
   production: AnalysedProductionFile[];
   /** test path -> production paths it imports (repo-relative). */
   testToProduction: Map<string, string[]>;
+  /**
+   * Test-case pairing across revisions, computed once per test file so that every
+   * rule agrees on which before-case corresponds to which after-case. Keyed by
+   * test file path. See src/core/pairing.ts.
+   */
+  pairings: Map<string, import("./pairing.ts").PairingResult>;
 }
 
 export interface Rule {

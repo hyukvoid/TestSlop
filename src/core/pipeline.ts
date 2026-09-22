@@ -23,6 +23,7 @@ import { parseTestFile } from "../adapters/ts/parse-test.ts";
 import { parseProductionFile } from "../adapters/ts/parse-production.ts";
 import { parsePythonTestFile, parsePythonProductionFile, pythonAvailable } from "../adapters/python/index.ts";
 import { buildTestToProductionMap } from "./link.ts";
+import { pairTestCases, type PairingResult } from "./pairing.ts";
 import { ALL_RULES, DEFAULT_RULES } from "../rules/index.ts";
 
 const SEVERITY_WEIGHT: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
@@ -87,7 +88,18 @@ export async function buildContext(changeSet: ChangeSet, opts: AnalyseOptions = 
     knownPaths: opts.knownPaths ?? [],
   });
 
-  return { changeSet, tests, production, testToProduction };
+  // Pair test cases once per file. Doing this centrally rather than per rule keeps
+  // every rule's notion of "the same test, before and after" identical, which is
+  // what makes cross-rule deduplication coherent.
+  const pairings = new Map<string, PairingResult>();
+  for (const entry of tests) {
+    pairings.set(
+      entry.file.path,
+      pairTestCases(entry.before?.cases ?? [], entry.after?.cases ?? []),
+    );
+  }
+
+  return { changeSet, tests, production, testToProduction, pairings };
 }
 
 export function runRules(ctx: AnalysisContext, opts: AnalyseOptions = {}): Finding[] {

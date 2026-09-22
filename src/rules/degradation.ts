@@ -121,31 +121,25 @@ export const testRemoved: Rule = {
   run(ctx: AnalysisContext): Finding[] {
     const findings: Finding[] = [];
 
-    // Every test body present anywhere at head, so a test that moved between
-    // files is not reported as removed.
+    // Every test body present anywhere at head, so a test that moved to a
+    // *different file* is not reported as removed. Within-file renames and moves
+    // are already handled by the shared pairing, which this rule consumes.
     const bodiesAtHead = new Set<string>();
-    const namesAtHead = new Set<string>();
     for (const entry of ctx.tests) {
       for (const c of entry.after?.cases ?? []) {
         bodiesAtHead.add(bodyFingerprint(c.body));
-        namesAtHead.add(c.name);
       }
     }
 
     for (const entry of ctx.tests) {
       const { before, after } = entry;
       if (!before || !after) continue;
+      const pairing = ctx.pairings.get(entry.file.path);
+      if (!pairing) continue;
 
-      const afterNames = new Set(after.cases.map((c) => c.fullName));
-      const removed = before.cases.filter((c) => {
-        if (afterNames.has(c.fullName)) return false;
-        // (1) moved or renamed: the same body exists at head somewhere
-        if (bodiesAtHead.has(bodyFingerprint(c.body))) return false;
-        // A test whose leaf name still exists (only the describe path changed)
-        // is a restructure, not a removal.
-        if (namesAtHead.has(c.name)) return false;
-        return true;
-      });
+      // Anything the pairing could not match, minus tests that reappeared in
+      // another file.
+      const removed = pairing.removed.filter((c) => !bodiesAtHead.has(bodyFingerprint(c.body)));
 
       if (removed.length === 0) continue;
 
@@ -204,11 +198,12 @@ export const exceptionBroadened: Rule = {
     for (const entry of ctx.tests) {
       const { before, after } = entry;
       if (!before || !after) continue;
-      const afterByName = new Map(after.cases.map((c) => [c.fullName, c] as const));
+      const pairing = ctx.pairings.get(entry.file.path);
+      if (!pairing) continue;
 
-      for (const bc of before.cases) {
-        const ac = afterByName.get(bc.fullName);
-        if (!ac) continue;
+      for (const casePair of pairing.pairs) {
+        const bc = casePair.before;
+        const ac = casePair.after;
 
         const bErrors = bc.assertions.filter((a) => a.aspect === "error");
         const aErrors = ac.assertions.filter((a) => a.aspect === "error");
@@ -271,11 +266,12 @@ export const snapshotReplacedAssertion: Rule = {
     for (const entry of ctx.tests) {
       const { before, after } = entry;
       if (!before || !after) continue;
-      const afterByName = new Map(after.cases.map((c) => [c.fullName, c] as const));
+      const pairing = ctx.pairings.get(entry.file.path);
+      if (!pairing) continue;
 
-      for (const bc of before.cases) {
-        const ac = afterByName.get(bc.fullName);
-        if (!ac) continue;
+      for (const casePair of pairing.pairs) {
+        const bc = casePair.before;
+        const ac = casePair.after;
 
         const bSnap = bc.assertions.filter((a) => isSnapshotMatcher(a.matcher)).length;
         const aSnap = ac.assertions.filter((a) => isSnapshotMatcher(a.matcher)).length;

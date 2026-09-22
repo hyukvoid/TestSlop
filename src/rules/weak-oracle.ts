@@ -15,11 +15,16 @@ import type { AnalysisContext, Finding, Rule, TestCase, TestFileModel } from "..
 import { strengthRank } from "../core/types.ts";
 import { isInteractionMatcher } from "../adapters/ts/strength.ts";
 
-/** Tests present in `after` but not in `before`. */
-function newCases(before: TestFileModel | undefined, after: TestFileModel): TestCase[] {
-  if (!before) return after.cases;
-  const known = new Set(before.cases.map((c) => c.fullName));
-  return after.cases.filter((c) => !known.has(c.fullName));
+/**
+ * Genuinely new tests, taken from the shared pairing rather than by title.
+ *
+ * Using titles here meant a renamed test counted as new, so `weak-new-test` could
+ * fire on a test that had existed for years and merely been retitled.
+ */
+function newCases(ctx: AnalysisContext, entry: { file: { path: string }; before?: TestFileModel; after?: TestFileModel }): TestCase[] {
+  if (!entry.after) return [];
+  if (!entry.before) return entry.after.cases;
+  return ctx.pairings.get(entry.file.path)?.added ?? [];
 }
 
 function isWeakClass(strength: string): boolean {
@@ -64,7 +69,7 @@ export const weakNewTest: Rule = {
       if (!entry.after) continue;
       if (isTypeTestFile(entry.file.path)) continue;
 
-      for (const c of newCases(entry.before, entry.after)) {
+      for (const c of newCases(ctx, entry)) {
         if (c.assertions.length === 0) continue; // covered by expect-expect; skip
         if (c.modifier === "skip" || c.modifier === "todo") continue;
         if (c.implicitAssertions.length > 0) continue; // throwing queries are a real oracle
@@ -198,7 +203,10 @@ export const mockOnlyTest: Rule = {
 
     for (const entry of ctx.tests) {
       if (!entry.after) continue;
-      const beforeByName = new Map((entry.before?.cases ?? []).map((c) => [c.fullName, c] as const));
+      const pairing = ctx.pairings.get(entry.file.path);
+      const priorOf = new Map(
+        (pairing?.pairs ?? []).map((p) => [p.after.fullName, p.before] as const),
+      );
 
       // Is this file an interaction-testing suite by design? If most of the
       // tests that already existed are interaction-only, a new test in the same
@@ -229,7 +237,7 @@ export const mockOnlyTest: Rule = {
         // test does verify what was communicated.
         if (interaction.some(pinsArguments)) continue;
 
-        const prior = beforeByName.get(c.fullName);
+        const prior = priorOf.get(c.fullName);
         const isNew = !prior;
         const grew = prior ? interaction.length > prior.assertions.length : false;
         if (!isNew && !grew) continue;
@@ -296,12 +304,12 @@ export const selfDerivedOracle: Rule = {
 
     for (const entry of ctx.tests) {
       if (!entry.after) continue;
-      const knownBefore = new Set((entry.before?.cases ?? []).map((c) => c.fullName));
+      const addedCases = new Set(newCases(ctx, entry).map((c) => c.fullName));
 
       for (const c of entry.after.cases) {
         // Only newly added tests. A pre-existing tautology is a known quantity;
         // one introduced by this change is what a reviewer needs to see.
-        if (knownBefore.has(c.fullName)) continue;
+        if (!addedCases.has(c.fullName)) continue;
         for (const a of c.assertions) {
           if (a.aspect !== "value") continue;
           const expected = a.args[0];

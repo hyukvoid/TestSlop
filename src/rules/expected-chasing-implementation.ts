@@ -32,6 +32,7 @@ import type {
   Rule,
 } from "../core/types.ts";
 import { pairAssertions } from "./assertion-weakened.ts";
+import type { PairingResult } from "../core/pairing.ts";
 
 interface ConstantChange {
   before: number;
@@ -157,16 +158,12 @@ export function derivationOf(
   return undefined;
 }
 
-function expectationChanges(
-  beforeCases: readonly { fullName: string; assertions: Assertion[] }[],
-  afterCases: readonly { fullName: string; assertions: Assertion[] }[],
-): ExpectationChange[] {
-  const afterByName = new Map(afterCases.map((c) => [c.fullName, c] as const));
+function expectationChanges(pairing: PairingResult): ExpectationChange[] {
   const out: ExpectationChange[] = [];
 
-  for (const bc of beforeCases) {
-    const ac = afterByName.get(bc.fullName);
-    if (!ac) continue;
+  for (const casePair of pairing.pairs) {
+    const bc = casePair.before;
+    const ac = casePair.after;
     for (const pair of pairAssertions(bc.assertions, ac.assertions)) {
       const bArg = pair.before.args[0];
       const aArg = pair.after.args[0];
@@ -200,7 +197,9 @@ export const expectedChasingImplementation: Rule = {
 
     for (const testEntry of ctx.tests) {
       if (!testEntry.before || !testEntry.after) continue;
-      const changes = expectationChanges(testEntry.before.cases, testEntry.after.cases);
+      const pairing = ctx.pairings.get(testEntry.file.path);
+      if (!pairing) continue;
+      const changes = expectationChanges(pairing);
       if (changes.length === 0) continue;
 
       const linkedPaths = ctx.testToProduction.get(testEntry.file.path) ?? [];

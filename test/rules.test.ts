@@ -110,12 +110,37 @@ describe("assertion-weakened", () => {
     expect(ruleIds(findings)).toContain("assertion-weakened");
   });
 
-  it("does not fire across differently named tests", async () => {
+  it("POC-01: fires when a test is renamed AND weakened", async () => {
+    // POC-00 deliberately did not fire here, because test cases were paired by
+    // title alone. That was the documented blind spot: rename the test while
+    // weakening it and the flagship rule saw an unrelated delete plus add.
+    // Structural pairing closes it.
     const findings = await scan([
       {
         path: "src/subject.test.ts",
         before: wrap(`    expect(thing()).toBe(1);`, "case one"),
         after: wrap(`    expect(thing()).toBeDefined();`, "case two"),
+      },
+    ]);
+    const f = findings.find((x) => x.ruleId === "assertion-weakened");
+    expect(f).toBeDefined();
+    // The pairing is a judgement, so the finding must say so and be discounted.
+    expect(f!.confidence).toBeLessThan(0.85);
+    expect(f!.evidence[0]!.detail ?? "").toMatch(/renamed|structure|position/);
+  });
+
+  it("still does not fire across genuinely unrelated tests", async () => {
+    const findings = await scan([
+      {
+        path: "src/subject.test.ts",
+        before: `import { describe, expect, it } from "vitest";
+import { alpha, beta } from "./subject.ts";
+it("checks alpha", () => { expect(alpha(1, 2)).toBe(3); });
+`,
+        after: `import { describe, expect, it } from "vitest";
+import { alpha, beta } from "./subject.ts";
+it("checks beta", () => { expect(beta("x")).toBeDefined(); });
+`,
       },
     ]);
     expect(ruleIds(findings)).not.toContain("assertion-weakened");

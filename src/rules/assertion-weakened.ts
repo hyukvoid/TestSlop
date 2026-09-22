@@ -21,6 +21,7 @@
 
 import type { Assertion, AnalysisContext, Finding, Rule, TestCase } from "../core/types.ts";
 import { strengthRank } from "../core/types.ts";
+import { basisConfidenceFactor } from "../core/pairing.ts";
 import { classifyMatcher } from "../adapters/ts/strength.ts";
 
 function rootIdentifier(a: Assertion): string | undefined {
@@ -109,12 +110,12 @@ export const assertionWeakened: Rule = {
       const { before, after } = entry;
       if (!before || !after) continue;
 
-      const afterByName = new Map<string, TestCase>();
-      for (const c of after.cases) afterByName.set(c.fullName, c);
+      const pairing = ctx.pairings.get(entry.file.path);
+      if (!pairing) continue;
 
-      for (const beforeCase of before.cases) {
-        const afterCase = afterByName.get(beforeCase.fullName);
-        if (!afterCase) continue;
+      for (const casePair of pairing.pairs) {
+        const beforeCase = casePair.before;
+        const afterCase = casePair.after;
 
         for (const pair of pairAssertions(beforeCase.assertions, afterCase.assertions)) {
           const beforeRank = strengthRank(pair.before.strength);
@@ -127,8 +128,23 @@ export const assertionWeakened: Rule = {
           // reporting the same line with two stories.
           if (pair.before.aspect === "value" && pair.after.aspect === "interaction") continue;
 
-          let confidence = verdict.confidence;
+          // Confidence is discounted for both kinds of uncertainty: how the test
+          // case was matched across revisions, and how the assertion was matched
+          // within the case.
+          let confidence = verdict.confidence * basisConfidenceFactor(casePair.basis);
           if (pair.basis === "positional") confidence -= 0.18;
+
+          const caveats: string[] = [];
+          if (pair.basis === "positional") caveats.push("assertion paired by position; subject expression also changed");
+          if (casePair.basis !== "exact-title") {
+            caveats.push(
+              casePair.basis === "identical-body"
+                ? `test renamed from "${beforeCase.name}"; body unchanged`
+                : casePair.basis === "leaf-title"
+                  ? "test moved to a different describe block"
+                  : `test matched to "${beforeCase.name}" by structure (${Math.round(casePair.score * 100)}% similar)`,
+            );
+          }
 
           findings.push({
             ruleId: "assertion-weakened",
@@ -145,7 +161,7 @@ export const assertionWeakened: Rule = {
                 label: "Assertion",
                 before: pair.before.raw,
                 after: pair.after.raw,
-                detail: pair.basis === "positional" ? "paired by position; subject expression also changed" : undefined,
+                ...(caveats.length > 0 ? { detail: caveats.join("; ") } : {}),
               },
             ],
           });
@@ -179,11 +195,12 @@ export const assertionRemoved: Rule = {
     for (const entry of ctx.tests) {
       const { before, after } = entry;
       if (!before || !after) continue;
-      const afterByName = new Map(after.cases.map((c) => [c.fullName, c] as const));
+      const pairing = ctx.pairings.get(entry.file.path);
+      if (!pairing) continue;
 
-      for (const beforeCase of before.cases) {
-        const afterCase = afterByName.get(beforeCase.fullName);
-        if (!afterCase) continue;
+      for (const casePair of pairing.pairs) {
+        const beforeCase = casePair.before;
+        const afterCase = casePair.after;
 
         const b = beforeCase.assertions.length;
         const a = afterCase.assertions.length;
@@ -209,13 +226,13 @@ export const assertionRemoved: Rule = {
 
         // Losing every assertion is categorically worse than losing one of five.
         const severity = a === 0 ? "high" : dropped.length >= 2 ? "medium" : "low";
-        const confidence = a === 0 ? 0.9 : 0.75;
+        const confidence = (a === 0 ? 0.9 : 0.75) * basisConfidenceFactor(casePair.basis);
 
         findings.push({
           ruleId: "assertion-removed",
           severity,
           class: "review",
-          confidence,
+          confidence: Number(confidence.toFixed(2)),
           file: entry.file.path,
           line: afterCase.line,
           testName: afterCase.fullName,

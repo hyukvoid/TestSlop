@@ -21,6 +21,7 @@ import type {
   TestModifier,
 } from "../../core/types.ts";
 import { classifyMatcher } from "./strength.ts";
+import { findChaiChains, toCanonicalMatcher, usesChai } from "./chai.ts";
 
 /**
  * Calls that assert by throwing. Discovered the hard way: scanning zustand's
@@ -46,6 +47,16 @@ const IMPLICIT_ASSERTION_NAMES = new Set([
   "assertSnapshot",
   "verify", // testdouble.js
   "verifyAll", // typemoq
+]);
+
+/**
+ * Chain words that only appear in chai. Their presence hands the chain to the chai
+ * extractor. `not` is deliberately absent because both frameworks use it.
+ */
+const CHAI_CONNECTORS = new Set([
+  "to", "be", "been", "is", "that", "which", "has", "have", "with",
+  "at", "of", "same", "but", "does", "still", "also", "should",
+  "deep", "nested", "own", "any", "all", "ordered", "itself",
 ]);
 
 function isImplicitAssertionName(name: string): boolean {
@@ -177,6 +188,11 @@ function unwindExpect(sf: ts.SourceFile, call: ts.CallExpression): { subject: ts
   // Peel modifier properties until we reach the expect() call itself.
   while (ts.isPropertyAccessExpression(cursor)) {
     const prop = cursor.name.text;
+    // A chai connector means this chain belongs to the chai extractor, not here.
+    // Without this guard both extractors claim `expect(x).to.equal(1)`: this one
+    // produces a bogus assertion with matcher "equal", which falls through the
+    // lattice to STRUCTURAL and masks the real classification.
+    if (CHAI_CONNECTORS.has(prop)) return undefined;
     if (prop === "not") negated = !negated;
     else if (prop === "resolves" || prop === "rejects") {
       isAsync = true;
@@ -220,6 +236,45 @@ function collectIdentifiers(sf: ts.SourceFile, node: ts.Node): string[] {
   return [...out];
 }
 
+/**
+ * chai assertions, normalised into exactly the same `Assertion` shape as Jest's.
+ *
+ * The chai chain is translated to a canonical matcher name and then classified by
+ * the single shared lattice, so no rule needs to know which framework produced the
+ * assertion. See src/adapters/ts/chai.ts.
+ */
+function parseChaiAssertionsIn(sf: ts.SourceFile, body: ts.Node): Assertion[] {
+  const out: Assertion[] = [];
+
+  for (const chain of findChaiChains(sf, body)) {
+    const args = chain.args.map((a) => toAssertionArg(sf, a));
+    const canonical = toCanonicalMatcher(chain.terminal, { negated: chain.negated, deep: chain.deep }, args);
+    if (!canonical) continue;
+
+    const cls = classifyMatcher(canonical.matcher, canonical.syntheticArgs, canonical.negated);
+    const subjectText = textOf(sf, chain.subjectNode).trim();
+
+    out.push({
+      line: lineOf(sf, chain.reportNode.getStart(sf)),
+      raw: textOf(sf, chain.reportNode).replace(/\s+/g, " ").trim(),
+      // The canonical name is recorded, not the chai word, so that
+      // matcher-sensitive rules (exception-broadened, mock-only-test) work
+      // unchanged across frameworks.
+      matcher: canonical.matcher,
+      negated: canonical.negated,
+      async: false,
+      subject: subjectText,
+      subjectKey: normaliseSubject(subjectText),
+      args: canonical.syntheticArgs,
+      strength: cls.strength,
+      aspect: cls.aspect,
+      subjectIdentifiers: collectIdentifiers(sf, chain.subjectNode),
+    });
+  }
+
+  return out;
+}
+
 function parseAssertionsIn(sf: ts.SourceFile, body: ts.Node): Assertion[] {
   const assertions: Assertion[] = [];
 
@@ -256,6 +311,17 @@ function parseAssertionsIn(sf: ts.SourceFile, body: ts.Node): Assertion[] {
   };
 
   ts.forEachChild(body, visit);
+
+  // chai chains are additive: a file can legitimately mix `expect(x).to.equal(1)`
+  // with Jest-style `expect(x).toBe(1)` during a migration, and both should be
+  // analysed. Duplicates are impossible because the two extractors match disjoint
+  // syntax (chai terminals are never Jest matcher names).
+  const chai = parseChaiAssertionsIn(sf, body);
+  if (chai.length > 0) {
+    assertions.push(...chai);
+    assertions.sort((a, b) => a.line - b.line);
+  }
+
   return assertions;
 }
 
@@ -419,10 +485,10 @@ function isTestCall(node: ts.CallExpression): TestCallInfo | undefined {
  */
 const UNSUPPORTED_ASSERTION_LIBS: Array<{ specifier: RegExp; name: string }> = [
   { specifier: /^ava$/, name: "ava (t.is / t.like / t.throwsAsync)" },
-  { specifier: /^chai$/, name: "chai (expect(x).to.equal)" },
   { specifier: /^should$/, name: "should.js" },
-  { specifier: /^(node:)?assert(\/strict)?$/, name: "node:assert" },
+  { specifier: /^(node:)?assert(\/strict)?$/, name: "node:assert (assert.strictEqual / assert.deepStrictEqual)" },
   { specifier: /^tape$/, name: "tape" },
+  { specifier: /^uvu\/assert$/, name: "uvu/assert" },
   { specifier: /^@japa\//, name: "japa" },
 ];
 
@@ -430,9 +496,14 @@ function detectFramework(content: string, imports: ImportRecord[]): Framework {
   if (imports.some((i) => i.specifier === "vitest")) return "vitest";
   if (imports.some((i) => i.specifier === "@jest/globals")) return "jest";
   if (imports.some((i) => i.specifier === "ava")) return "ava";
+  if (usesChai(imports)) return "mocha-chai";
   if (imports.some((i) => i.specifier === "node:test" || i.specifier === "test")) return "node:test";
   if (/\bvi\s*\./.test(content)) return "vitest";
   if (/\bjest\s*\./.test(content)) return "jest";
+  // chai installed as a global, common in mocha projects with a setup file. Matched
+  // on the chain shape rather than on `expect(...)`, because a balanced-paren regex
+  // fails the moment the subject contains a call or an object literal.
+  if (/\)\s*\.\s*(to|should)\s*\./.test(content)) return "mocha-chai";
   if (/\b(describe|it|test)\s*\(/.test(content)) return "jest";
   return "unknown";
 }
