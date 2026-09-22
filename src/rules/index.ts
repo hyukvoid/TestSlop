@@ -9,6 +9,7 @@ import {
   snapshotReplacedAssertion,
   testDisabled,
   testOnlyProductionPath,
+  testRemoved,
 } from "./degradation.ts";
 
 /**
@@ -28,6 +29,7 @@ export const ALL_RULES: Rule[] = [
   mockOnlyTest,
   weakNewTest,
   coverageIgnoreAdded,
+  testRemoved,
 ];
 
 export function rulesByIds(ids: string[] | undefined): Rule[] {

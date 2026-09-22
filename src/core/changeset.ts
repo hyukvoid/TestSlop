@@ -24,10 +24,21 @@ export function classifyPath(path: string): FileRole {
   if (DECLARATION.test(path)) return "other";
   if (FIXTURE_PATH.test(path)) return "other";
   if (TEST_PATH.test(path) || PY_TEST_PATH.test(path)) return "test";
-  // A file inside a tests directory that is not itself named like a test is
-  // usually a helper; treat it as "other" so helper churn does not inflate the
-  // changed-test count.
-  if (TEST_DIR.test(path)) return "other";
+
+  // Jest's default convention puts tests in `__tests__/` with ordinary file
+  // names. Requiring a `.test.` infix missed immer's entire suite (`__tests__/base.js`),
+  // which showed up as zero analysable commits rather than as an error.
+  // Helper modules inside those directories are still excluded, so that helper
+  // churn does not inflate the changed-test count.
+  if (TEST_DIR.test(path)) {
+    const base = path.slice(path.lastIndexOf("/") + 1);
+    const helperName = /^(setup|globals?|helpers?|utils?|util|fixtures?|mocks?|factories|support|jest\.|vitest\.|tsconfig|index)/i;
+    // A helper can be identified either by its own name or by living in a
+    // helper subdirectory, e.g. `test/helpers/server.js`.
+    const helperDir = /(^|\/)(helpers?|utils?|fixtures?|mocks?|factories|support|common)\//i;
+    const isHelper = helperName.test(base) || helperDir.test(path);
+    return isHelper ? "other" : "test";
+  }
   if (/\.(config|setup)\.(ts|js|mjs|cjs)$/i.test(path)) return "other";
   return "production";
 }

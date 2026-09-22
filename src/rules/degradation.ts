@@ -28,11 +28,11 @@ function productionAlsoChanged(ctx: AnalysisContext, testPath: string): string[]
 
 export const testDisabled: Rule = {
   id: "test-disabled",
-  title: "A previously running test was skipped, marked todo, or deleted in this change",
+  title: "A previously running test was switched to skip/todo/failing in this change",
   uniqueness:
     "no-disabled-tests reports every skipped test in the repository with equal weight, forever. This reports only the transition, and pairs it with the production change that accompanied it.",
   defaultSeverity: "high",
-  baseConfidence: 0.95,
+  baseConfidence: 0.97,
   diffAware: true,
 
   run(ctx: AnalysisContext): Finding[] {
@@ -40,41 +40,14 @@ export const testDisabled: Rule = {
 
     for (const entry of ctx.tests) {
       const { before, after } = entry;
-      if (!before) continue;
+      if (!before || !after) continue;
       const linkedProd = productionAlsoChanged(ctx, entry.file.path);
-      const afterByName = new Map((after?.cases ?? []).map((c) => [c.fullName, c] as const));
+      const afterByName = new Map(after.cases.map((c) => [c.fullName, c] as const));
 
       for (const bc of before.cases) {
         if (bc.modifier === "skip" || bc.modifier === "todo") continue; // already disabled
         const ac = afterByName.get(bc.fullName);
-
-        if (!ac) {
-          // Test vanished. Deleting a test is sometimes correct, so this is
-          // reported at medium unless production changed alongside it.
-          if (!after) continue; // whole file deleted; reported once below
-          findings.push({
-            ruleId: "test-disabled",
-            severity: linkedProd.length > 0 ? "high" : "medium",
-            class: "review",
-            confidence: 0.85,
-            file: entry.file.path,
-            line: 1,
-            ...(linkedProd[0] ? { productionFile: linkedProd[0] } : {}),
-            testName: bc.fullName,
-            message: `Test "${bc.name}" was removed.`,
-            rationale:
-              linkedProd.length > 0
-                ? `Production code it exercised (${linkedProd.join(", ")}) changed in the same commit. The suite got greener by having one fewer thing to check.`
-                : "The suite reports fewer failures because it now checks less.",
-            evidence: [
-              {
-                label: "Removed test",
-                before: `${bc.fullName} (${bc.assertions.length} assertion${bc.assertions.length === 1 ? "" : "s"})`,
-              },
-            ],
-          });
-          continue;
-        }
+        if (!ac) continue; // removal is handled by test-removed, which is far noisier
 
         if (ac.modifier === "skip" || ac.modifier === "todo" || ac.modifier === "failing") {
           findings.push({
@@ -97,6 +70,112 @@ export const testDisabled: Rule = {
           });
         }
       }
+    }
+
+    return findings;
+  },
+};
+
+/** Normalised test body, used to recognise a test that moved or was renamed. */
+function bodyFingerprint(body: string): string {
+  return body
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+/**
+ * Rule: test-removed
+ *
+ * Split out of `test-disabled` after measuring it against real history. On 120
+ * reviewed zustand commits the combined rule produced 71 findings, of which 2
+ * were the signal (`it` -> `it.skip`) and 69 were renames, file splits, describe
+ * restructuring, or deliberate deletions during major-version work.
+ *
+ * The rule survives only with three constraints, all derived from those failures:
+ *
+ *   1. A removed test whose body reappears anywhere in the changeset (under any
+ *      name, in any file) moved or was renamed. Not a removal.
+ *   2. Report once per file, not once per test. "17 tests removed from this file"
+ *      is one reviewable fact; 17 findings is a wall the reviewer will scroll past.
+ *   3. Require a net loss of verification in the file. A file that lost 3 tests
+ *      and gained 5 is being restructured, not hollowed out.
+ */
+export const testRemoved: Rule = {
+  id: "test-removed",
+  title: "A test file lost test cases without replacing them",
+  uniqueness:
+    "Requires both revisions plus move detection across the whole changeset. A linter cannot see a deletion at all.",
+  defaultSeverity: "medium",
+  baseConfidence: 0.6,
+  diffAware: true,
+
+  run(ctx: AnalysisContext): Finding[] {
+    const findings: Finding[] = [];
+
+    // Every test body present anywhere at head, so a test that moved between
+    // files is not reported as removed.
+    const bodiesAtHead = new Set<string>();
+    const namesAtHead = new Set<string>();
+    for (const entry of ctx.tests) {
+      for (const c of entry.after?.cases ?? []) {
+        bodiesAtHead.add(bodyFingerprint(c.body));
+        namesAtHead.add(c.name);
+      }
+    }
+
+    for (const entry of ctx.tests) {
+      const { before, after } = entry;
+      if (!before || !after) continue;
+
+      const afterNames = new Set(after.cases.map((c) => c.fullName));
+      const removed = before.cases.filter((c) => {
+        if (afterNames.has(c.fullName)) return false;
+        // (1) moved or renamed: the same body exists at head somewhere
+        if (bodiesAtHead.has(bodyFingerprint(c.body))) return false;
+        // A test whose leaf name still exists (only the describe path changed)
+        // is a restructure, not a removal.
+        if (namesAtHead.has(c.name)) return false;
+        return true;
+      });
+
+      if (removed.length === 0) continue;
+
+      // (3) net loss of verification
+      const beforeAssertions = before.cases.reduce((n, c) => n + c.assertions.length, 0);
+      const afterAssertions = after.cases.reduce((n, c) => n + c.assertions.length, 0);
+      if (after.cases.length >= before.cases.length) continue;
+      if (afterAssertions >= beforeAssertions) continue;
+
+      const linkedProd = productionAlsoChanged(ctx, entry.file.path);
+      const lostAssertions = beforeAssertions - afterAssertions;
+
+      // (2) one finding per file
+      findings.push({
+        ruleId: "test-removed",
+        severity: linkedProd.length > 0 && removed.length >= 2 ? "medium" : "low",
+        class: "review",
+        confidence: linkedProd.length > 0 ? 0.6 : 0.45,
+        file: entry.file.path,
+        line: 1,
+        ...(linkedProd[0] ? { productionFile: linkedProd[0] } : {}),
+        message: `${removed.length} test case${removed.length === 1 ? "" : "s"} removed from this file, ${lostAssertions} assertion${lostAssertions === 1 ? "" : "s"} net.`,
+        rationale:
+          linkedProd.length > 0
+            ? `Production code this file exercises (${linkedProd.join(", ")}) changed in the same commit. Deleting tests is often correct during a rewrite, but it is also the cheapest way to make a suite green.`
+            : "Deleting tests is sometimes correct. This is a note that the suite now checks less than it did.",
+        evidence: [
+          {
+            label: "Removed",
+            before: removed
+              .slice(0, 6)
+              .map((c) => `${c.fullName}  (${c.assertions.length} assertion${c.assertions.length === 1 ? "" : "s"})`)
+              .join("\n") + (removed.length > 6 ? `\n… and ${removed.length - 6} more` : ""),
+          },
+          { label: "Test count", before: String(before.cases.length), after: String(after.cases.length) },
+        ],
+      });
     }
 
     return findings;
@@ -223,7 +302,7 @@ export const snapshotReplacedAssertion: Rule = {
 
 export const coverageIgnoreAdded: Rule = {
   id: "coverage-ignore-added",
-  title: "A coverage-suppression pragma was added to production code",
+  title: "Coverage-suppression pragmas were added to production code",
   uniqueness:
     "Lives in production source, so test linters never look at it. Coverage reports go *up* as a direct result, which is exactly why it is worth surfacing.",
   defaultSeverity: "medium",
@@ -235,20 +314,36 @@ export const coverageIgnoreAdded: Rule = {
 
     for (const entry of ctx.production) {
       const added = newSignals(entry.before, entry.after, "coverage-ignore");
-      for (const s of added) {
-        findings.push({
-          ruleId: "coverage-ignore-added",
-          severity: "medium",
-          class: "review",
-          confidence: 0.95,
-          file: entry.file.path,
-          line: s.line,
-          message: "Coverage suppression pragma added.",
-          rationale:
-            "Coverage percentage rises because this code stopped being measured, not because it became tested.",
-          evidence: [{ label: "Added", after: s.text }],
-        });
-      }
+      if (added.length === 0) continue;
+
+      // Aggregated per file. immer added four pragmas to one module in a single
+      // commit; four separate medium findings for one decision is noise, and the
+      // reviewer's question ("why is this module opting out of measurement?") is
+      // the same for all of them.
+      const first = added[0]!;
+      findings.push({
+        ruleId: "coverage-ignore-added",
+        severity: added.length >= 3 ? "medium" : "low",
+        class: "review",
+        confidence: 0.95,
+        file: entry.file.path,
+        line: first.line,
+        message:
+          added.length === 1
+            ? "Coverage suppression pragma added."
+            : `${added.length} coverage suppression pragmas added to this file.`,
+        rationale:
+          "Coverage percentage rises because this code stopped being measured, not because it became tested.",
+        evidence: [
+          {
+            label: "Added",
+            after: added
+              .slice(0, 5)
+              .map((s) => `${entry.file.path}:${s.line}   ${s.text}`)
+              .join("\n") + (added.length > 5 ? `\n… and ${added.length - 5} more` : ""),
+          },
+        ],
+      });
     }
     return findings;
   },

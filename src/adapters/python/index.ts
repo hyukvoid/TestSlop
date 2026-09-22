@@ -70,6 +70,18 @@ async function run(kind: "test" | "production", filePath: string, content: strin
 export async function parsePythonTestFile(filePath: string, content: string): Promise<TestFileModel> {
   try {
     const raw = (await run("test", filePath, content)) as TestFileModel;
+    // Normalise optional collections so rules can treat every adapter's output
+    // uniformly instead of guarding each field access.
+    for (const c of raw.cases ?? []) {
+      c.assertions ??= [];
+      c.implicitAssertions ??= [];
+      c.mockOps ??= [];
+      c.calls ??= [];
+    }
+    raw.cases ??= [];
+    raw.imports ??= [];
+    raw.moduleMocks ??= [];
+    raw.problems ??= [];
     return raw;
   } catch (err) {
     return {

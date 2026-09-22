@@ -114,7 +114,67 @@ export function runRules(ctx: AnalysisContext, opts: AnalyseOptions = {}): Findi
   }
 
   const min = opts.minConfidence ?? 0;
-  return sortFindings(findings.filter((f) => f.confidence >= min));
+  return sortFindings(deduplicate(findings.filter((f) => f.confidence >= min)));
+}
+
+/**
+ * Rules overlap by design: several detectors look at the same transition from
+ * different angles. When two of them land on the same line, the reviewer should
+ * get one story, not two.
+ *
+ * Observed on immer: `toThrowError("literal")` becoming a build-mode ternary was
+ * reported by both `assertion-weakened` (strength dropped) and
+ * `exception-broadened` (specificity dropped). Both were describing one edit.
+ *
+ * The subsuming rule is kept, defined as the one that explains the transition in
+ * the more general vocabulary.
+ */
+const SUBSUMES: Record<string, string[]> = {
+  // A test that no longer runs makes any statement about its assertions moot.
+  "test-disabled": ["assertion-removed", "assertion-weakened", "mock-only-test", "weak-new-test"],
+  // "no longer says which error is expected" is more useful to a reviewer than
+  // "TYPE_ONLY became EXISTENCE", so the domain-specific rule wins.
+  "exception-broadened": ["assertion-weakened"],
+  // Likewise the snapshot story explains why the assertions vanished.
+  "snapshot-replaced-assertion": ["assertion-removed", "assertion-weakened"],
+  "mock-scope-expanded": ["mock-only-test", "weak-new-test"],
+  "assertion-removed": ["mock-only-test"],
+};
+
+export function deduplicate(findings: Finding[]): Finding[] {
+  const atLocation = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const key = `${f.file}:${f.line}`;
+    const list = atLocation.get(key) ?? [];
+    list.push(f);
+    atLocation.set(key, list);
+  }
+
+  const suppressed = new Set<Finding>();
+  for (const list of atLocation.values()) {
+    if (list.length < 2) continue;
+    const present = new Set(list.map((f) => f.ruleId));
+    for (const f of list) {
+      const losers = SUBSUMES[f.ruleId];
+      if (!losers) continue;
+      for (const other of list) {
+        if (other !== f && losers.includes(other.ruleId) && present.has(f.ruleId)) {
+          suppressed.add(other);
+        }
+      }
+    }
+  }
+
+  // Exact duplicates from a rule reporting via two links (e.g. one test file
+  // resolving to two production modules).
+  const seen = new Set<string>();
+  return findings.filter((f) => {
+    if (suppressed.has(f)) return false;
+    const key = `${f.ruleId}|${f.file}|${f.line}|${f.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function sortFindings(findings: Finding[]): Finding[] {

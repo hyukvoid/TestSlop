@@ -36,6 +36,8 @@ export interface Mutant {
   describes: string;
   /** Priority; lower runs first when the budget is tight. */
   priority: number;
+  /** Enclosing function name, used to group survivors into one finding. */
+  enclosing?: string;
 }
 
 const BOUNDARY_SWAPS: Record<string, string> = {
@@ -94,12 +96,48 @@ export function generateMutants(filePath: string, content: string, opts: Generat
   const mutants: Mutant[] = [];
   const lineOf = (pos: number): number => sf.getLineAndCharacterOfPosition(pos).line + 1;
 
+  const fnStack: string[] = [];
+  const enclosing = (): string | undefined => fnStack[fnStack.length - 1];
+
   const push = (m: Mutant): void => {
     if (allowed.size > 0 && !allowed.has(m.line)) return;
-    mutants.push(m);
+    const withScope: Mutant = { ...m };
+    const fn = enclosing();
+    if (fn) withScope.enclosing = fn;
+    mutants.push(withScope);
+  };
+
+  const nameOfFunctionLike = (node: ts.Node): string | undefined => {
+    if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) {
+      return node.name && ts.isIdentifier(node.name) ? node.name.text : undefined;
+    }
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      const parent = node.parent;
+      if (parent && ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
+      if (parent && ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text;
+    return undefined;
   };
 
   const visit = (node: ts.Node): void => {
+    const isFnLike =
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      // Module-level `const DEFAULTS = {...}` should group under its own name so
+      // that "the defaults are untested" reads as one finding.
+      (ts.isVariableDeclaration(node) && !!node.initializer && ts.isObjectLiteralExpression(node.initializer));
+    if (isFnLike) fnStack.push(nameOfFunctionLike(node) ?? enclosing() ?? "<anonymous>");
+    try {
+      visitInner(node);
+    } finally {
+      if (isFnLike) fnStack.pop();
+    }
+  };
+
+  const visitInner = (node: ts.Node): void => {
     if (ts.isBinaryExpression(node)) {
       const opNode = node.operatorToken;
       const text = OPERATOR_TEXT[opNode.kind];

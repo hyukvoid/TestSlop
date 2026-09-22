@@ -189,6 +189,18 @@ export const assertionRemoved: Rule = {
         const a = afterCase.assertions.length;
         if (a >= b || b === 0) continue;
 
+        // A test rewritten to assert through a throwing query has not lost its
+        // oracle, it changed its form. Two real zustand commits forced this:
+        //   - `expect(selector).toHaveBeenCalled()` became an ErrorBoundary plus
+        //     `getByText('errored')`
+        //   - two `expect(count).toBe(n)` calls inside a render callback became
+        //     `await waitForElement(() => getByText('count: 0'))`
+        // Both are better tests than what they replaced. Counting implicit
+        // assertions against lost `expect` calls one-for-one was the wrong
+        // comparison, because one query can replace several assertions.
+        if (a === 0 && afterCase.implicitAssertions.length > 0) continue;
+        if (afterCase.implicitAssertions.length > beforeCase.implicitAssertions.length) continue;
+
         const paired = new Set(
           pairAssertions(beforeCase.assertions, afterCase.assertions).map((p) => p.before.raw),
         );

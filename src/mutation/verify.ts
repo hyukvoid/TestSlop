@@ -318,9 +318,26 @@ export function mutationFindings(report: MutationRunReport): Finding[] {
     return findings;
   }
 
-  for (const outcome of report.outcomes) {
-    if (outcome.status !== "survived") continue;
-    const m = outcome.mutant;
+  // Survivors are grouped per enclosing decision site rather than reported one
+  // per mutant. Measured on the d04 corpus case, the ungrouped form emitted six
+  // separate high-severity findings for one small file; the grouped form emits
+  // two, each naming a distinct piece of unverified behaviour. Same information,
+  // an order of magnitude less to read.
+  const survivors = report.outcomes.filter((o) => o.status === "survived");
+  const groups = new Map<string, typeof survivors>();
+  for (const o of survivors) {
+    const key = `${o.mutant.file}:${o.mutant.enclosing ?? `line ${o.mutant.line}`}`;
+    const list = groups.get(key) ?? [];
+    list.push(o);
+    groups.set(key, list);
+  }
+
+  for (const [, group] of groups) {
+    const first = group[0]!;
+    const m = first.mutant;
+    const where = m.enclosing ? `\`${m.enclosing}\`` : `${m.file}:${m.line}`;
+    const totalMs = group.reduce((n, o) => n + o.durationMs, 0);
+
     findings.push({
       ruleId: "changed-logic-survived",
       severity: "high",
@@ -330,15 +347,22 @@ export function mutationFindings(report: MutationRunReport): Finding[] {
       line: m.line,
       productionFile: m.file,
       productionLine: m.line,
-      message: `Changed logic was deliberately broken and the tests stayed green.`,
-      rationale: `Nothing in the tests that changed alongside this line verifies ${m.describes}. This is an executed result, not an inference.`,
+      message:
+        group.length === 1
+          ? `Changed logic in ${where} was deliberately broken and the tests stayed green.`
+          : `${group.length} independent ways of breaking ${where} all left the tests green.`,
+      rationale: `Nothing in the tests that changed alongside this code verifies ${m.describes}. This is an executed result, not an inference.`,
       evidence: [
         {
-          label: `Mutation applied (${m.operator})`,
-          before: `${m.file}:${m.line}   ${m.original}`,
-          after: `${m.file}:${m.line}   ${m.replacement}`,
+          label: `Mutations that survived (${group.length})`,
+          detail: group
+            .map((o) => `${o.mutant.file}:${o.mutant.line}   ${o.mutant.original}  ->  ${o.mutant.replacement}   (${o.mutant.operator})`)
+            .join("\n"),
         },
-        { label: "Result", detail: `test suite still passed in ${outcome.durationMs} ms  (${outcome.detail ?? ""})` },
+        {
+          label: "Result",
+          detail: `test suite passed under every mutation above, ${totalMs} ms total  (${first.detail ?? ""})`,
+        },
       ],
     });
   }

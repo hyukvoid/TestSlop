@@ -160,6 +160,20 @@ export interface TestCase {
   mockOps: MockOp[];
   /** True when the body contains no `expect`-like call at all. */
   hasNoAssertions: boolean;
+  /**
+   * Calls that verify behaviour by throwing rather than through `expect`, such as
+   * testing-library's `getByText` or a bare `assert()`. A test can be perfectly
+   * well oracled with zero `expect` calls, so rules that reason about "lost all
+   * assertions" must account for these or they misfire on real code.
+   */
+  implicitAssertions: ImplicitAssertion[];
+}
+
+export interface ImplicitAssertion {
+  line: number;
+  /** The called function, e.g. "getByText", "assert", "waitFor". */
+  api: string;
+  raw: string;
 }
 
 export interface MockOp {

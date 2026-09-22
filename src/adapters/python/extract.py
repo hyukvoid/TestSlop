@@ -299,6 +299,30 @@ def calls_in(fn):
     return uniq
 
 
+# Helpers that verify by raising rather than through `assert`. The unittest
+# assertion family is the main one; Django/Flask test clients and
+# `pytest.fail`-style helpers behave the same way.
+IMPLICIT_ASSERTION_NAMES = {
+    "assertEqual", "assertNotEqual", "assertTrue", "assertFalse", "assertIs",
+    "assertIsNot", "assertIsNone", "assertIsNotNone", "assertIn", "assertNotIn",
+    "assertRaises", "assertRaisesRegex", "assertAlmostEqual", "assertDictEqual",
+    "assertListEqual", "assertCountEqual", "assertRegex", "assertGreater",
+    "assertLess", "fail", "assertContains", "assertRedirects",
+    "assertQuerysetEqual", "assertNumQueries", "assertJSONEqual",
+}
+
+
+def implicit_assertions_in(fn, lines):
+    out = []
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            f = n.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+            if name in IMPLICIT_ASSERTION_NAMES:
+                out.append({"line": n.lineno, "api": name, "raw": src(n, lines)[:160]})
+    return out
+
+
 MOCK_APIS = ("patch", "Mock", "MagicMock", "AsyncMock", "patch.object", "monkeypatch")
 
 
@@ -358,6 +382,7 @@ def parse_test(path, content):
             effective = mod if mod != "none" else inherited
             asserts = assertions_in(node, lines)
             body_src = src(node, lines)
+            implicit = implicit_assertions_in(node, lines)
             cases.append({
                 "name": node.name,
                 "fullName": " > ".join(suite_path + [node.name]),
@@ -368,7 +393,8 @@ def parse_test(path, content):
                 "body": body_src,
                 "calls": calls_in(node),
                 "mockOps": mock_ops_in(node, lines),
-                "hasNoAssertions": len(asserts) == 0,
+                "hasNoAssertions": len(asserts) == 0 and len(implicit) == 0,
+                "implicitAssertions": implicit,
             })
 
     for node in tree.body:

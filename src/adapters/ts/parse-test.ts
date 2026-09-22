@@ -13,6 +13,7 @@ import type {
   Assertion,
   AssertionArg,
   Framework,
+  ImplicitAssertion,
   ImportRecord,
   MockOp,
   TestCase,
@@ -20,6 +21,37 @@ import type {
   TestModifier,
 } from "../../core/types.ts";
 import { classifyMatcher } from "./strength.ts";
+
+/**
+ * Calls that assert by throwing. Discovered the hard way: scanning zustand's
+ * history produced "test no longer asserts anything" on a test that had been
+ * rewritten to use an ErrorBoundary plus `getByText('errored')`, which is a
+ * perfectly good oracle containing no `expect` call. Treating these as
+ * assertions removed an entire class of false positive.
+ */
+const IMPLICIT_ASSERTION_CALL = /^(get|find)(All)?By[A-Z]\w*$/;
+const IMPLICIT_ASSERTION_NAMES = new Set([
+  "assert",
+  "ok",
+  "strictEqual",
+  "deepStrictEqual",
+  "notStrictEqual",
+  "invariant",
+  "waitFor",
+  "waitForElement",
+  "waitForElementToBeRemoved",
+  "expectTypeOf",
+  "assertType",
+  "expectType",
+  "assertSnapshot",
+  "verify", // testdouble.js
+  "verifyAll", // typemoq
+]);
+
+function isImplicitAssertionName(name: string): boolean {
+  const leaf = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : name;
+  return IMPLICIT_ASSERTION_NAMES.has(leaf) || IMPLICIT_ASSERTION_CALL.test(leaf);
+}
 
 const TEST_FNS = new Set(["it", "test", "fit", "xit", "xtest", "specify"]);
 const SUITE_FNS = new Set(["describe", "context", "suite", "xdescribe", "fdescribe"]);
@@ -73,9 +105,27 @@ export function normaliseSubject(raw: string): string {
     .replace(/;+$/, "");
 }
 
+/**
+ * A conditional whose branches are all string literals is still a string
+ * expectation.
+ *
+ * From immer: `toThrowError("produce can only be called on drafts")` became
+ * `toThrowError(isProd ? "[Immer] minified error nr: 21" : "produce can only …")`
+ * when minified error messages were introduced. Classifying the ternary as an
+ * opaque expression made it look like the message check had been dropped, and
+ * produced four findings on one entirely reasonable commit.
+ */
+function conditionalOfStrings(node: ts.Node): boolean {
+  if (!ts.isConditionalExpression(node)) return false;
+  const isStringish = (n: ts.Expression): boolean =>
+    ts.isStringLiteralLike(n) || ts.isTemplateExpression(n) || conditionalOfStrings(n);
+  return isStringish(node.whenTrue) && isStringish(node.whenFalse);
+}
+
 function classifyArgKind(node: ts.Node): AssertionArg["kind"] {
   if (ts.isNumericLiteral(node)) return "number";
   if (ts.isStringLiteralLike(node)) return "string";
+  if (conditionalOfStrings(node)) return "string";
   if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return "boolean";
   if (node.kind === ts.SyntaxKind.NullKeyword) return "null";
   if (ts.isIdentifier(node) && node.text === "undefined") return "undefined";
@@ -233,6 +283,29 @@ function parseMockOpsIn(sf: ts.SourceFile, body: ts.Node): MockOp[] {
   };
   visit(body);
   return ops;
+}
+
+function parseImplicitAssertionsIn(sf: ts.SourceFile, body: ts.Node): ImplicitAssertion[] {
+  const out: ImplicitAssertion[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const callee = n.expression;
+      const name =
+        ts.isIdentifier(callee) ? callee.text
+        : ts.isPropertyAccessExpression(callee) ? callee.name.text
+        : undefined;
+      if (name && isImplicitAssertionName(name)) {
+        out.push({
+          line: lineOf(sf, n.getStart(sf)),
+          api: name,
+          raw: textOf(sf, n).replace(/\s+/g, " ").trim().slice(0, 160),
+        });
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(body);
+  return out;
 }
 
 function collectCalls(sf: ts.SourceFile, body: ts.Node): string[] {
@@ -438,6 +511,7 @@ export function parseTestFile(filePath: string, content: string): TestFileModel 
         const start = lineOf(sf, node.getStart(sf));
         const end = lineOf(sf, node.getEnd());
         const assertions = bodyNode ? parseAssertionsIn(sf, bodyNode) : [];
+        const implicitAssertions = bodyNode ? parseImplicitAssertionsIn(sf, bodyNode) : [];
         const bodyText = bodyNode ? textOf(sf, bodyNode) : "";
         cases.push({
           name,
@@ -449,7 +523,8 @@ export function parseTestFile(filePath: string, content: string): TestFileModel 
           body: bodyText,
           calls: bodyNode ? collectCalls(sf, bodyNode) : [],
           mockOps: bodyNode ? parseMockOpsIn(sf, bodyNode) : [],
-          hasNoAssertions: assertions.length === 0,
+          hasNoAssertions: assertions.length === 0 && implicitAssertions.length === 0,
+          implicitAssertions,
         });
         return;
       }
