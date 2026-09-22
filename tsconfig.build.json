@@ -1,0 +1,13 @@
+{
+  // Emit configuration: only `src` ships, so rootDir is `src` and dist mirrors it
+  // directly (dist/cli.js, not dist/src/cli.js). The base tsconfig.json also
+  // includes corpus/, scripts/ and test/ so that `npm run typecheck` covers the
+  // harnesses, which must not end up in the published tree.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "corpus", "work", "scripts", "test"]
+}
