@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Scratch area for generated fixture repositories and experiment output.
+# The generators are committed; their output is reproducible, so it is not.
+work/
+corpus/generated/
+.vitest-temp/

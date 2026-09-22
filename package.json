@@ -1,0 +1,35 @@
+{
+  "name": "testslop",
+  "version": "0.0.0-poc.0",
+  "private": true,
+  "description": "Your coding agent made the tests green. Check what changed to get there.",
+  "type": "module",
+  "bin": {
+    "testslop": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --run",
+    "cli": "node --experimental-strip-types src/cli.ts",
+    "corpus:build": "node --experimental-strip-types scripts/build-corpus.ts",
+    "evaluate": "node --experimental-strip-types scripts/evaluate.ts",
+    "lint:compare": "node --experimental-strip-types scripts/lint-compare.ts"
+  },
+  "dependencies": {
+    "typescript": "5.9.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "vitest": "3.2.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
