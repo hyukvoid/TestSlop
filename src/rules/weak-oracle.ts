@@ -172,9 +172,26 @@ export const mockOnlyTest: Rule = {
   title: "A test asserts only that collaborators were called, not what was communicated",
   uniqueness:
     "Structurally valid and idiomatic; no linter flags it. Needs classifying each assertion as interaction-vs-outcome, judging whether the interaction pins any values, and comparing against the file's established style.",
-  defaultSeverity: "medium",
-  baseConfidence: 0.7,
+  defaultSeverity: "low",
+  baseConfidence: 0.45,
   diffAware: false,
+  /**
+   * Off by default on the evidence.
+   *
+   * Measured on held-out repository history this rule was the worst performer by
+   * a wide margin: 4 findings on zustand and 9 on axios, and on manual review
+   * essentially all of them were legitimate. The recurring reason is that for
+   * middleware, adapters and lifecycle code, "was this collaborator called, and
+   * how many times" *is* the observable behaviour — there is no return value to
+   * assert on.
+   *
+   * Successive refinements (argument pinning, established-file-style suppression,
+   * negated-occurrence handling) each removed a slice of the noise without
+   * reaching a precision worth defaulting to. It stays available via
+   * `--rule mock-only-test` for codebases where the convention does not apply,
+   * and is reported in the POC as a rule that did not earn its place.
+   */
+  experimental: true,
 
   run(ctx: AnalysisContext): Finding[] {
     const findings: Finding[] = [];

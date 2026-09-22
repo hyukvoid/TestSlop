@@ -178,3 +178,74 @@ describe("every matcher yields prose describing what it still accepts", () => {
     expect(cls.admits.length).toBeGreaterThan(0);
   });
 });
+
+describe("negated occurrence and absence claims are precise, not vacuous", () => {
+  // These came out of the axios history, where nine findings were tests whose
+  // entire contract was that something did not happen.
+  it("REGRESSION (axios Http2Sessions): not.toHaveBeenCalled pins the call count to zero", () => {
+    const cls = classifyMatcher("toHaveBeenCalled", [], true);
+    expect(cls.strength).toBe("EXACT");
+    expect(cls.aspect).toBe("interaction");
+  });
+
+  it("keeps not.toHaveBeenCalledWith weak, because it still admits any other call", () => {
+    expect(classifyMatcher("toHaveBeenCalledWith", [str("a")], true).strength).toBe("VACUOUS");
+  });
+
+  it("REGRESSION (axios AxiosError): not.toHaveProperty is a precise absence claim", () => {
+    expect(classifyMatcher("toHaveProperty", [str("cause")], true).strength).toBe("STRUCTURAL");
+  });
+
+  it("treats not.toBeDefined as equivalent to toBeUndefined", () => {
+    expect(classifyMatcher("toBeDefined", [], true).strength).toBe("EXACT");
+    expect(rank("toBeDefined", [], true)).toBe(rank("toBeUndefined"));
+  });
+
+  it("still treats not.toContain as weak", () => {
+    expect(classifyMatcher("toContain", [str("x")], true).strength).toBe("VACUOUS");
+  });
+
+  it("REGRESSION (immer): a conditional of string literals is still a message expectation", () => {
+    // `toThrowError(isProd ? "[Immer] minified error nr: 21" : "produce can only …")`
+    const conditional: AssertionArg = {
+      raw: 'isProd ? "[Immer] minified error nr: 21" : "produce can only be called on drafts"',
+      kind: "string",
+    };
+    expect(classifyMatcher("toThrowError", [conditional], false).strength).toBe("CONSTRAINED");
+  });
+});
+
+describe("reference identity vs value equality under negation", () => {
+  // From immer's copy-semantics suite, where `not.toBe(ref)` is the correct and
+  // intentional assertion that a copy was returned. Treating it as vacuous
+  // produced three high-severity findings on correct code.
+  it("REGRESSION (immer): not.toBe(objectReference) is a precise non-identity claim", () => {
+    expect(classifyMatcher("toBe", [ident("base.w")], true).strength).toBe("CONSTRAINED");
+    expect(classifyMatcher("toBe", [ident("draft")], true).strength).toBe("CONSTRAINED");
+  });
+
+  it("keeps not.toBe(literal) vacuous, because it admits every other value", () => {
+    expect(classifyMatcher("toBe", [{ raw: "false", kind: "boolean" }], true).strength).toBe("VACUOUS");
+    expect(classifyMatcher("toBe", [num(3)], true).strength).toBe("VACUOUS");
+  });
+
+  it("keeps not.toEqual weak even against a reference, since deep inequality is broad", () => {
+    expect(classifyMatcher("toEqual", [ident("base")], true).strength).toBe("VACUOUS");
+  });
+});
+
+describe("error-message snapshots are message assertions, not value snapshots", () => {
+  it("REGRESSION (immer): an inline error snapshot is not stronger than an explicit message", () => {
+    // immer replaced `toThrowErrorMatchingInlineSnapshot(...)` with
+    // `toThrowError(isProd ? "…" : "…")`, an improvement that was being reported
+    // as four separate weakenings.
+    const snapshot = classifyMatcher("toThrowErrorMatchingInlineSnapshot", [str("boom")], false);
+    const explicit = classifyMatcher("toThrowError", [str("boom")], false);
+    expect(snapshot.aspect).toBe("error");
+    expect(strengthRank(snapshot.strength)).toBeLessThanOrEqual(strengthRank(explicit.strength));
+  });
+
+  it("treats a file-based error snapshot as opaque", () => {
+    expect(classifyMatcher("toThrowErrorMatchingSnapshot", [], false).strength).toBe("OPAQUE");
+  });
+});

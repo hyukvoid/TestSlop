@@ -23,7 +23,7 @@ import { parseTestFile } from "../adapters/ts/parse-test.ts";
 import { parseProductionFile } from "../adapters/ts/parse-production.ts";
 import { parsePythonTestFile, parsePythonProductionFile, pythonAvailable } from "../adapters/python/index.ts";
 import { buildTestToProductionMap } from "./link.ts";
-import { ALL_RULES } from "../rules/index.ts";
+import { ALL_RULES, DEFAULT_RULES } from "../rules/index.ts";
 
 const SEVERITY_WEIGHT: Record<Severity, number> = { high: 0, medium: 1, low: 2 };
 
@@ -91,7 +91,9 @@ export async function buildContext(changeSet: ChangeSet, opts: AnalyseOptions = 
 }
 
 export function runRules(ctx: AnalysisContext, opts: AnalyseOptions = {}): Finding[] {
-  const rules = opts.rules ?? ALL_RULES;
+  // Default set excludes experimental rules. Callers that want to characterise
+  // every rule (the corpus harness) pass ALL_RULES explicitly.
+  const rules = opts.rules ?? DEFAULT_RULES;
   const findings: Finding[] = [];
 
   for (const rule of rules) {
@@ -219,6 +221,15 @@ export async function analyse(changeSet: ChangeSet, opts: AnalyseOptions = {}): 
   const ctx = await buildContext(changeSet, opts);
   const findings = runRules(ctx, opts);
 
+  // Collect files whose oracle could not be analysed so the reporter can say so.
+  const notAnalysed: Array<{ file: string; reason: string }> = [];
+  for (const entry of ctx.tests) {
+    const model = entry.after ?? entry.before;
+    for (const problem of model?.problems ?? []) {
+      notAnalysed.push({ file: entry.file.path, reason: problem });
+    }
+  }
+
   return {
     range: changeSet.range,
     findings,
@@ -228,6 +239,7 @@ export async function analyse(changeSet: ChangeSet, opts: AnalyseOptions = {}): 
       testCasesChanged: countChangedTestCases(ctx),
       findings: findings.length,
       durationMs: Date.now() - started,
+      notAnalysed,
     },
   };
 }

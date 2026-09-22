@@ -67,7 +67,7 @@ export interface RenderOptions {
 export function renderFinding(f: Finding, opts: RenderOptions = {}): string {
   const width = opts.width ?? 78;
   const out: string[] = [];
-  const tag = f.class === "evidence" ? c.magenta(" ⟨verified⟩") : "";
+  const tag = f.class === "evidence" ? c.magenta(" [verified by experiment]") : "";
 
   out.push(`${paintSeverity(f.severity)}  ${c.bold(f.ruleId)}${tag}`);
   out.push(`      ${c.dim(`${f.file}:${f.line}`)}`);
@@ -99,7 +99,9 @@ export function renderFinding(f: Finding, opts: RenderOptions = {}): string {
 
 export function renderReport(result: ScanResult, opts: RenderOptions = {}): string {
   const out: string[] = [];
-  const rule = "─".repeat(58);
+  // ASCII separator: Windows terminals in non-UTF-8 code pages mangle box-drawing
+  // characters, and a report full of question marks does not inspire confidence.
+  const rule = "-".repeat(58);
 
   out.push("");
   out.push(c.bold("TestSlop"));
@@ -110,8 +112,14 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
   out.push(`Changed prod      ${result.summary.productionFilesChanged} file(s)`);
   out.push("");
 
+  const notAnalysed = result.summary.notAnalysed ?? [];
+
   if (result.findings.length === 0) {
     out.push(c.green("No review-worthy changes to the test oracle found."));
+    if (notAnalysed.length > 0) {
+      out.push("");
+      out.push(renderNotAnalysed(notAnalysed));
+    }
     out.push("");
     out.push(c.dim(`Scanned in ${result.summary.durationMs} ms.`));
     out.push("");
@@ -144,6 +152,10 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
   if (evidence > 0) {
     out.push(c.magenta(`${evidence} backed by an executed mutation experiment`));
   }
+  if (notAnalysed.length > 0) {
+    out.push("");
+    out.push(renderNotAnalysed(notAnalysed));
+  }
   out.push("");
   const total = result.summary.durationMs + (result.summary.mutationDurationMs ?? 0);
   out.push(
@@ -156,6 +168,21 @@ export function renderReport(result: ScanResult, opts: RenderOptions = {}): stri
   out.push("");
 
   return out.join("\n");
+}
+
+/**
+ * Coverage caveats. A scan that analysed nothing must not read like a scan that
+ * found nothing, so this block is printed in both the empty and non-empty cases.
+ */
+function renderNotAnalysed(entries: Array<{ file: string; reason: string }>): string {
+  const lines: string[] = [];
+  lines.push(c.yellow(`Not fully analysed (${entries.length} file${entries.length === 1 ? "" : "s"}):`));
+  for (const e of entries.slice(0, 6)) {
+    lines.push(c.dim(`  ${e.file}`));
+    lines.push(c.dim(`    ${e.reason}`));
+  }
+  if (entries.length > 6) lines.push(c.dim(`  … and ${entries.length - 6} more`));
+  return lines.join("\n");
 }
 
 export function renderRuleList(

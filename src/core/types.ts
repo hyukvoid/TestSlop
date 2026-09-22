@@ -205,7 +205,7 @@ export interface ImportRecord {
   resolved?: string;
 }
 
-export type Framework = "jest" | "vitest" | "node:test" | "pytest" | "unknown";
+export type Framework = "jest" | "vitest" | "node:test" | "pytest" | "ava" | "unknown";
 
 // ---------------------------------------------------------------------------
 // Production-side model
@@ -321,6 +321,12 @@ export interface Rule {
   baseConfidence: number;
   /** True when the rule fundamentally needs before/after state. */
   diffAware: boolean;
+  /**
+   * Off by default. Used for rules whose measured precision on real repositories
+   * was not good enough to earn a place in the default set, but which are worth
+   * keeping available and documented.
+   */
+  experimental?: boolean;
   run(ctx: AnalysisContext): Finding[];
 }
 
@@ -331,6 +337,12 @@ export interface ScanSummary {
   findings: number;
   durationMs: number;
   mutationDurationMs?: number;
+  /**
+   * Files that were parsed but whose oracle could not be analysed, e.g. because
+   * they use an unsupported assertion library. Reported so that "no findings" is
+   * never silently confused with "nothing to find".
+   */
+  notAnalysed: Array<{ file: string; reason: string }>;
 }
 
 export interface ScanResult {

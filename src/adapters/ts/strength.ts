@@ -122,12 +122,27 @@ export function classifyMatcher(
       matcher === "toHaveResolvedWith";
 
     if (negated) {
+      // `expect(spy).not.toHaveBeenCalled()` is NOT a weak assertion: it pins the
+      // call count to exactly zero, which is a precise and often complete
+      // contract ("closing the session must not touch the socket").
+      //
+      // Negating a *specific* call is different — `not.toHaveBeenCalledWith(x)`
+      // still admits every other call and no call at all — so the two are
+      // separated rather than both being treated as negation.
+      //
+      // axios surfaced this: nine findings on lifecycle tests whose whole point
+      // was asserting that something did not happen.
+      if (!withArgs) {
+        return {
+          strength: "EXACT",
+          aspect: "interaction",
+          admits: "only behaviour in which the collaborator is never invoked",
+        };
+      }
       return {
-        strength: withArgs ? "VACUOUS" : "EXISTENCE",
+        strength: "VACUOUS",
         aspect: "interaction",
-        admits: withArgs
-          ? "any call other than the one listed, including no call at all"
-          : "any behaviour where the collaborator is not invoked",
+        admits: "any call other than the one listed, including no call at all",
       };
     }
     if (withArgs && looseness === "none" && args.length > 0) {
@@ -161,6 +176,21 @@ export function classifyMatcher(
   // -- Snapshots -------------------------------------------------------------
   if (SNAPSHOT_MATCHERS.has(matcher)) {
     const inline = matcher.includes("Inline") && args.length > 0;
+
+    // An error-message snapshot is a message assertion whose text happens to be
+    // tool-generated. Ranking it above an explicit `toThrowError("msg")` made
+    // immer's migration to explicit messages look like four weakenings, when it
+    // was an improvement.
+    if (matcher.startsWith("toThrowError")) {
+      return {
+        strength: inline ? "CONSTRAINED" : "OPAQUE",
+        aspect: "error",
+        admits: inline
+          ? "any error whose message matches the inline snapshot"
+          : "any error, until the stored snapshot is regenerated",
+      };
+    }
+
     return {
       strength: inline ? "STRUCTURAL" : "OPAQUE",
       aspect: "snapshot",
@@ -222,6 +252,10 @@ export function classifyMatcher(
   }
 
   if (EXISTENCE_NULLARY.has(matcher)) {
+    // `not.toBeDefined()` is `toBeUndefined()`: it pins one value.
+    if (negated && matcher === "toBeDefined") {
+      return { strength: "EXACT", aspect: "value", admits: "only undefined" };
+    }
     return {
       strength: "EXISTENCE",
       aspect: "value",
@@ -272,6 +306,17 @@ export function classifyMatcher(
     matcher === "toIncludeSameMembers"
   ) {
     if (negated) {
+      // Asserting a key is *absent* is a precise structural claim, and is the
+      // correct oracle for "this field must not be serialised". Distinguished
+      // from `not.toContain(x)` / `not.toEqual(x)`, which really do admit almost
+      // anything. axios's non-enumerable `cause` regression test is the example.
+      if (matcher === "toHaveProperty" || matcher === "toHaveKeys") {
+        return {
+          strength: "STRUCTURAL",
+          aspect: "value",
+          admits: "only values that lack this property",
+        };
+      }
       return {
         strength: "VACUOUS",
         aspect: "value",
@@ -296,6 +341,22 @@ export function classifyMatcher(
   // -- Deep / strict equality ------------------------------------------------
   if (matcher === "toBe" || matcher === "toEqual" || matcher === "toStrictEqual") {
     if (negated) {
+      // `not.toBe(someObject)` is the canonical way to assert "this is a copy,
+      // not the same reference", which is a precise and intentional claim.
+      // `not.toBe(3)` is the vacuous case, because it admits every other value.
+      //
+      // immer's copy-semantics tests are full of the former; treating them as
+      // vacuous produced three high-severity findings on correct code.
+      const arg = args[0];
+      const comparesReference =
+        matcher === "toBe" && arg !== undefined && !isLiteralArg(arg) && arg.kind !== "none";
+      if (comparesReference) {
+        return {
+          strength: "CONSTRAINED",
+          aspect: "value",
+          admits: "any value that is not this exact reference",
+        };
+      }
       return {
         strength: "VACUOUS",
         aspect: "value",

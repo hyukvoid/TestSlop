@@ -27,6 +27,7 @@ import { analyse } from "../src/core/pipeline.ts";
 import { listFilesAtRef } from "../src/core/git.ts";
 import { runMutationExperiment, mutationFindings, summariseMutation } from "../src/mutation/verify.ts";
 import type { Finding, ScanResult } from "../src/core/types.ts";
+import { ALL_RULES } from "../src/rules/index.ts";
 import { ALL_CASES } from "../corpus/cases/index.ts";
 import type { CorpusCase } from "../corpus/types.ts";
 import { buildCase, CORPUS_ROOT } from "./build-corpus.ts";
@@ -123,7 +124,10 @@ export async function evaluate(opts: EvaluateOptions = {}): Promise<EvaluationRe
     const repo = await buildCase(kase);
     const changeSet = await collectChangeSet({ cwd: repo, base: "HEAD~1" });
     const knownPaths = await listFilesAtRef(repo, "HEAD").catch(() => [] as string[]);
-    const result = await analyse(changeSet, { knownPaths });
+    // The corpus characterises every rule, including experimental ones that are
+    // off by default. The real-history harness (scripts/real-world.ts) uses the
+    // default set instead, because that is what a user actually sees.
+    const result = await analyse(changeSet, { knownPaths, rules: ALL_RULES });
 
     const extra: Partial<CaseScore> = {};
 

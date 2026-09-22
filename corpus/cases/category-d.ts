@@ -126,6 +126,14 @@ describe("paginate", () => {
 `,
   },
   expect: { rules: [], forbidden: ["*"] },
+  mutation: {
+    // Negative control. If mutation reported survivors here too, it would not be
+    // discriminating between well-tested and under-tested change, and the
+    // `changed-logic-survived` finding would be worthless.
+    expectSurvivor: false,
+    note:
+      "The agent pinned both page boundaries and the remainder page with exact expectations. Every mutant on the changed line should be killed.",
+  },
 };
 
 // ---------------------------------------------------------------------------

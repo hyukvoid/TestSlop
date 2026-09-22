@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyPath, syntheticChangeSet } from "../src/core/changeset.ts";
 import { analyse } from "../src/core/pipeline.ts";
+import { ALL_RULES, DEFAULT_RULES } from "../src/rules/index.ts";
 import type { Finding } from "../src/core/types.ts";
 
 interface FileSpec {
@@ -21,9 +22,17 @@ interface FileSpec {
   after?: string;
 }
 
-async function scan(files: FileSpec[]): Promise<Finding[]> {
+/**
+ * @param rules Rule ids to run. Omit for the default set. Experimental rules
+ *              (currently `mock-only-test`) must be named explicitly, exactly as
+ *              a user would have to on the command line.
+ */
+async function scan(files: FileSpec[], rules?: string[]): Promise<Finding[]> {
   const cs = syntheticChangeSet(files);
-  const result = await analyse(cs, { python: false });
+  const result = await analyse(cs, {
+    python: false,
+    ...(rules ? { rules: ALL_RULES.filter((r) => rules.includes(r.id)) } : {}),
+  });
   return result.findings;
 }
 
@@ -250,24 +259,34 @@ describe("test-removed", () => {
 // mock-only-test
 // ---------------------------------------------------------------------------
 
-describe("mock-only-test", () => {
-  it("reports a new test that only counts calls", async () => {
-    const findings = await scan([
-      {
-        path: "src/subject.test.ts",
-        before: wrap(`    expect(thing()).toBe(1);`, "existing"),
-        after:
-          wrap(`    expect(thing()).toBe(1);`, "existing") +
-          `
+describe("mock-only-test (experimental, off by default)", () => {
+  it("is excluded from the default rule set, on the evidence of its real-world precision", () => {
+    // 4 findings on zustand and 9 on axios, essentially all legitimate on review:
+    // for middleware and lifecycle code, "was this called, how many times" is the
+    // observable behaviour. Documented in docs/POC-00-REPORT.md.
+    expect(DEFAULT_RULES.map((r) => r.id)).not.toContain("mock-only-test");
+    expect(ALL_RULES.map((r) => r.id)).toContain("mock-only-test");
+  });
+
+  it("reports a new test that only counts calls, when explicitly enabled", async () => {
+    const findings = await scan(
+      [
+        {
+          path: "src/subject.test.ts",
+          before: wrap(`    expect(thing()).toBe(1);`, "existing"),
+          after:
+            wrap(`    expect(thing()).toBe(1);`, "existing") +
+            `
 it("refunds", async () => {
   const spy = vi.fn();
   await thing(spy);
-  expect(spy).toHaveBeenCalled();
   expect(spy).toHaveBeenCalledTimes(1);
 });
 `,
-      },
-    ]);
+        },
+      ],
+      ["mock-only-test"],
+    );
     expect(ruleIds(findings)).toContain("mock-only-test");
   });
 
@@ -695,5 +714,48 @@ describe("classifyPath", () => {
     expect(classifyPath("src/types.d.ts")).toBe("other");
     expect(classifyPath("src/__snapshots__/a.snap")).toBe("other");
     expect(classifyPath("vitest.config.ts")).toBe("other");
+  });
+});
+
+describe("test-disabled regressions from real history", () => {
+  const mkAva = (modifier: string): string =>
+    `import test from "ava";
+import { thing } from "./subject.ts";
+
+test${modifier}("removes undefined value headers", (t) => {
+  expect(thing()).toBe(1);
+});
+`;
+
+  it("REGRESSION (ky): a pre-existing test.failing marker is not a new transition", async () => {
+    // ky marks two known-failing tests with ava's `test.failing`. Because the rule
+    // only skipped `skip`/`todo`, it re-reported them on every commit that touched
+    // their file: 12 findings across 100 commits, zero actual transitions.
+    const findings = await scan([
+      {
+        path: "test/headers.test.ts",
+        before: mkAva(".failing"),
+        after: mkAva(".failing") + `\ntest("new one", (t) => { expect(thing()).toBe(2); });\n`,
+      },
+    ]);
+    expect(ruleIds(findings)).not.toContain("test-disabled");
+  });
+
+  it("still reports an active test becoming test.failing, at medium", async () => {
+    const findings = await scan([
+      { path: "test/headers.test.ts", before: mkAva(""), after: mkAva(".failing") },
+    ]);
+    const f = findings.find((x) => x.ruleId === "test-disabled");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("medium");
+  });
+
+  it("reports an active test becoming skip, at high", async () => {
+    const findings = await scan([
+      { path: "test/headers.test.ts", before: mkAva(""), after: mkAva(".skip") },
+    ]);
+    const f = findings.find((x) => x.ruleId === "test-disabled");
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe("high");
   });
 });

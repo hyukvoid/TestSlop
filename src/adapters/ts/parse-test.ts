@@ -318,7 +318,10 @@ function collectCalls(sf: ts.SourceFile, body: ts.Node): string[] {
           out.add(callee.text);
         }
       } else if (ts.isPropertyAccessExpression(callee)) {
-        out.add(textOf(sf, callee).replace(/\s+/g, ""));
+        const text = textOf(sf, callee).replace(/\s+/g, "");
+        // Skip the assertion machinery itself: `expect(x).toBe` is not a call
+        // into the code under test, and listing it in the report reads as noise.
+        if (!/^(expect|vi|jest|sinon|assert)\b/.test(text)) out.add(text);
       }
     }
     ts.forEachChild(n, visit);
@@ -404,14 +407,43 @@ function isTestCall(node: ts.CallExpression): TestCallInfo | undefined {
   };
 }
 
+/**
+ * Assertion libraries whose API TestSlop does not model.
+ *
+ * This matters more than it looks. Scanning ky produced zero findings across 100
+ * commits, which reads like a clean bill of health. In fact ky uses ava, whose
+ * assertions are `t.is(...)` / `t.like(...)`, so 256 test cases were parsed and
+ * *not one assertion was analysed*. A tool that silently analyses nothing is
+ * worse than one that errors, so unsupported files are recorded as problems and
+ * surfaced in the report.
+ */
+const UNSUPPORTED_ASSERTION_LIBS: Array<{ specifier: RegExp; name: string }> = [
+  { specifier: /^ava$/, name: "ava (t.is / t.like / t.throwsAsync)" },
+  { specifier: /^chai$/, name: "chai (expect(x).to.equal)" },
+  { specifier: /^should$/, name: "should.js" },
+  { specifier: /^(node:)?assert(\/strict)?$/, name: "node:assert" },
+  { specifier: /^tape$/, name: "tape" },
+  { specifier: /^@japa\//, name: "japa" },
+];
+
 function detectFramework(content: string, imports: ImportRecord[]): Framework {
   if (imports.some((i) => i.specifier === "vitest")) return "vitest";
   if (imports.some((i) => i.specifier === "@jest/globals")) return "jest";
+  if (imports.some((i) => i.specifier === "ava")) return "ava";
   if (imports.some((i) => i.specifier === "node:test" || i.specifier === "test")) return "node:test";
   if (/\bvi\s*\./.test(content)) return "vitest";
   if (/\bjest\s*\./.test(content)) return "jest";
   if (/\b(describe|it|test)\s*\(/.test(content)) return "jest";
   return "unknown";
+}
+
+function unsupportedAssertionLibrary(imports: ImportRecord[]): string | undefined {
+  for (const imp of imports) {
+    for (const lib of UNSUPPORTED_ASSERTION_LIBS) {
+      if (lib.specifier.test(imp.specifier)) return lib.name;
+    }
+  }
+  return undefined;
 }
 
 function parseImports(sf: ts.SourceFile): ImportRecord[] {
@@ -536,6 +568,18 @@ export function parseTestFile(filePath: string, content: string): TestFileModel 
 
   if (cases.length === 0 && /\b(it|test)\s*[.(]/.test(content)) {
     problems.push("file looks like a test file but no test cases were extracted");
+  }
+
+  // Cases parsed but no assertions found anywhere: the oracle was not analysed.
+  // Say so, rather than letting an empty result imply a clean verdict.
+  const totalAssertions = cases.reduce((n, c) => n + c.assertions.length + c.implicitAssertions.length, 0);
+  if (cases.length > 0 && totalAssertions === 0) {
+    const lib = unsupportedAssertionLibrary(imports);
+    problems.push(
+      lib
+        ? `${cases.length} test case(s) parsed but no assertions recognised: this file uses ${lib}, which TestSlop does not model. Oracle-strength rules did not run on it.`
+        : `${cases.length} test case(s) parsed but no assertions recognised. Oracle-strength rules did not run on this file.`,
+    );
   }
 
   return {

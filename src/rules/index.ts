@@ -32,8 +32,12 @@ export const ALL_RULES: Rule[] = [
   testRemoved,
 ];
 
+/** Rules enabled unless the caller asks for something else. */
+export const DEFAULT_RULES: Rule[] = ALL_RULES.filter((r) => !r.experimental);
+
 export function rulesByIds(ids: string[] | undefined): Rule[] {
-  if (!ids || ids.length === 0) return ALL_RULES;
+  // Naming a rule explicitly opts into it, including experimental ones.
+  if (!ids || ids.length === 0) return DEFAULT_RULES;
   const set = new Set(ids);
   return ALL_RULES.filter((r) => set.has(r.id));
 }

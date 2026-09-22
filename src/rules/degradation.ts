@@ -45,14 +45,21 @@ export const testDisabled: Rule = {
       const afterByName = new Map(after.cases.map((c) => [c.fullName, c] as const));
 
       for (const bc of before.cases) {
-        if (bc.modifier === "skip" || bc.modifier === "todo") continue; // already disabled
+        // Only a transition out of the active state counts. Skipping just
+        // `skip`/`todo` was not enough: ky uses ava's `test.failing` as a
+        // permanent, documented known-failure marker, and the rule re-reported
+        // the same two tests on every commit that touched their file — 12
+        // findings across 100 commits, none of them a transition.
+        if (bc.modifier !== "none" && bc.modifier !== "only") continue;
         const ac = afterByName.get(bc.fullName);
         if (!ac) continue; // removal is handled by test-removed, which is far noisier
 
         if (ac.modifier === "skip" || ac.modifier === "todo" || ac.modifier === "failing") {
           findings.push({
             ruleId: "test-disabled",
-            severity: "high",
+            // `failing` is a weaker signal than `skip`: in ava and Jest it is an
+            // explicit, reviewable "known to fail" marker rather than silence.
+            severity: ac.modifier === "failing" ? "medium" : "high",
             class: "review",
             confidence: 0.97,
             file: entry.file.path,

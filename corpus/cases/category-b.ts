@@ -374,6 +374,12 @@ describe("discountedTotal", () => {
 `,
   },
   expect: { rules: [], forbidden: ["*"] },
+  mutation: {
+    // Negative control: the discount boundaries are pinned on both sides, so
+    // flipping >= to > must be caught.
+    expectSurvivor: false,
+    note: "Boundary tests at 49/50 and 99/100 should kill the boundary mutants.",
+  },
 };
 
 // Confusable with: a01 via the positional-pairing fallback.
