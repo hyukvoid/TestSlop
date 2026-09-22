@@ -192,3 +192,81 @@ once, by `exception-broadened`, rather than twice.
 
 Arg parsing uses `node:util parseArgs`; colour handling is ~15 lines in
 `src/report/human.ts`. Neither justified a dependency.
+
+---
+
+# POC-01 additions
+
+## Test-case pairing
+
+`src/core/pairing.ts`
+
+Every diff-aware rule needs to know which before-case corresponds to which
+after-case. POC-00 matched on the full `describe > … > title` and nothing else,
+which left a documented hole: rename a test while weakening it and the flagship rule
+saw an unrelated delete plus add.
+
+Five layers, most certain first, each required to be unambiguous:
+
+```
+1  exact-title       identical describe path + title                 confidence x1.00
+2  identical-body    normalised body matches, title changed          confidence x1.00
+3  leaf-title        same title, describe path changed               confidence x0.95
+4  structural        mutual-best similarity above a margin           confidence x0.80
+5  singleton         one unmatched case each side, small file        confidence x0.70
+```
+
+Layer 4 weights subjects 0.55, production calls 0.30, title tokens 0.15. Subjects
+dominate because `expect(response.status)` surviving a matcher change is exactly the
+signal `assertion-weakened` needs, and it is the component least likely to coincide
+between genuinely different tests. Expected *values* are deliberately excluded from
+the similarity, since weakening changes them.
+
+A candidate must clear 0.60, beat the runner-up by 0.15, and be the mutual best match
+in both directions. **A wrong pairing is worse than no pairing**: it invents a
+before/after relationship and can manufacture a high-severity finding from two
+unrelated tests. Every finding derived from a non-exact basis is confidence-discounted
+and prints the basis in its evidence block.
+
+Pairing is computed once per file in `buildContext` and shared through
+`AnalysisContext.pairings`, so all rules agree on identity and cross-rule
+deduplication stays coherent.
+
+## chai
+
+`src/adapters/ts/chai.ts`
+
+Selected over ava on measured evidence: 39.4% of surveyed test files versus 1.6%.
+
+The module does one thing — translate a chai chain into the canonical matcher
+vocabulary the Jest classifier already understands:
+
+```
+expect(x).to.equal(1)      ->  toBe        + args
+expect(x).to.deep.equal(1) ->  toEqual     + args
+expect(x).to.be.true       ->  toBe        + synthetic [true]
+expect(x).to.exist         ->  toBeDefined
+expect(x).to.be.empty      ->  toHaveLength + synthetic [0]
+expect(spy).to.have.been.calledWith(1)  ->  toHaveBeenCalledWith + args
+```
+
+There is still **one** strength lattice, and no rule contains a chai branch. Property
+terminals (`.to.be.true`) carry their expected value in the property name, so it is
+materialised as a synthetic argument — otherwise the lattice could not see that the
+assertion pins exactly one value.
+
+Two extraction passes are needed because `.to.be.true` is not a call expression. The
+Jest extractor rejects any chain containing a chai connector (`to`, `be`, `have`, …);
+without that guard both extractors claim `expect(x).to.equal(1)` and the Jest one wins
+with a meaningless `STRUCTURAL`.
+
+## Analysis coverage
+
+`src/core/coverage.ts`
+
+Computed per scan and consumed by both reporters. When `complete` is false — a changed
+test file yielded no analysable assertion — the human reporter replaces its green
+headline with a warning and the JSON sets `analysisComplete: false`.
+
+This exists because POC-00 shipped the opposite: 256 ky test cases parsed, zero
+assertions analysed, reported as "No review-worthy changes found".
