@@ -15,51 +15,44 @@ import { ALL_RULES, excludeRules, rulesByIds } from "./rules/index.ts";
 import { renderReport, renderRuleList } from "./report/human.ts";
 import { toJsonReport } from "./report/json.ts";
 import { verifyChangedBehaviour, behaviourFindings } from "./mutation/behaviour-verify.ts";
-import type { Finding } from "./core/types.ts";
+import type { ChangeSet, Finding } from "./core/types.ts";
+import { findEvilTwin, renderTwinJson, renderTwinReport } from "./mutation/twin.ts";
 
-const VERSION = "0.0.0-poc.0";
+const VERSION = "0.1.0";
 
 const USAGE = `
 TestSlop ${VERSION}
-Tests passed. Now break the code and see if they notice.
+Your tests pass. So does the wrong code.
 
 Usage
-  testslop verify [options]   Break the changed behaviour and check the tests catch it
-  testslop scan [options]     Fast static-only analysis of the test diff
+  testslop twin [options]    Show one nearby implementation your tests also accept
+  testslop scan [options]    Fast static scan of changed tests
+  testslop verify [options]  Advanced view of every checked alternative
   testslop rules
   testslop --help
 
 Options
   --base <ref>         Compare against this git ref. Default: HEAD
-                       For a branch ref the merge base is used.
-  --head <ref>         Compare up to this ref instead of the working tree.
-  --staged             Compare the index instead of the working tree.
-  --cwd <path>         Repository to analyse. Default: current directory.
-  --json               Emit the machine-readable report on stdout.
-  --budget <n>         Max behavioural alternatives to execute. Default: 12
-  --stop-after <n>     Stop once this many unverified behaviours are found.
-                       Default: 4
-  --no-link-check      Skip the full-suite run that distinguishes "nothing
-                       verifies this" from "the linked tests were too narrow".
-  --test-command <cmd> Command used to run tests during verification.
-                       Default: auto-detected from package.json
-  --mutate             Deprecated alias for running verification inside \`scan\`.
-  --rule <id>          Only run these rules. Repeatable.
-  --skip-rule <id>     Skip these rules. Repeatable.
-  --min-confidence <n> Drop findings below this confidence (0..1). Default: 0
-  --fail-on <level>    Exit 1 when a finding at or above this severity exists.
-                       One of: high, medium, low, never. Default: never
-  --compact            One block per finding, no evidence.
-  --quiet              Suppress the report; only set the exit code.
+  --head <ref>         Compare up to this ref instead of the working tree
+  --staged             Compare the index instead of the working tree
+  --cwd <path>         Repository to analyse. Default: current directory
+  --test-command <cmd> Test command override; otherwise auto-detected
+  --budget <n>         Nearby alternatives to check for one Twin. Default: 12
+  --json               Emit a structured result instead of terminal output
+  --rule <id>          Only run these static rules. Repeatable
+  --skip-rule <id>     Skip these static rules. Repeatable
+  --min-confidence <n> Drop static findings below 0..1. Default: 0
+  --fail-on <level>    Static-scan exit threshold: high, medium, low, never
+  --compact            Compact static-scan report
+  --quiet              Suppress output
 
 Examples
-  testslop verify                        # the agent just finished: is it protected?
-  testslop verify --base main            # verify a whole branch
-  testslop scan                          # static only, milliseconds
-  testslop verify --json > findings.json
+  testslop twin                       # one story, one missing witness
+  testslop twin --base main           # compare the whole branch
+  testslop scan                       # secondary static analysis
+  testslop verify --json              # advanced candidate details
 
-Verification copies your working tree to a scratch directory and mutates only
-there. Your files are never written to.
+Twin checks use a disposable scratch copy. Your source tree is never modified.
 `;
 
 interface Options {
@@ -180,8 +173,34 @@ async function main(): Promise<void> {
     process.stdout.write(renderRuleList(ALL_RULES));
     return;
   }
+  if (command === "twin") {
+    let changeSet: ChangeSet;
+    try {
+      const collectOpts: Parameters<typeof collectChangeSet>[0] = {
+        cwd: options.cwd,
+        staged: options.staged,
+      };
+      if (options.base !== undefined) collectOpts.base = options.base;
+      if (options.head !== undefined) collectOpts.head = options.head;
+      changeSet = await collectChangeSet(collectOpts);
+    } catch (err) {
+      if (err instanceof GitError) fail(err.message);
+      throw err;
+    }
+
+    const report = await findEvilTwin(changeSet, {
+      budget: options.mutateBudget,
+      ...(options.testCommand !== undefined ? { testCommand: options.testCommand } : {}),
+    });
+    if (!options.quiet) {
+      process.stdout.write(options.json ? renderTwinJson(report) : renderTwinReport(report));
+    }
+    if (report.status === "baseline-failed") process.exitCode = 1;
+    if (report.status === "error") process.exitCode = 2;
+    return;
+  }
   if (command !== "scan" && command !== "verify") {
-    fail(`unknown command "${command}". Try: testslop verify`);
+    fail(`unknown command "${command}". Try: testslop twin`);
   }
   // `verify` is `scan` plus behaviour verification. POC-02 promoted it to its own verb
   // because mutation stopped being the optional extra: it is the only layer that found
@@ -243,10 +262,10 @@ async function main(): Promise<void> {
     }
   }
 
-  process.exit(exceedsThreshold(result.findings, options.failOn) ? 1 : 0);
+  process.exitCode = exceedsThreshold(result.findings, options.failOn) ? 1 : 0;
 }
 
 main().catch((err) => {
   process.stderr.write(`testslop: unexpected failure: ${(err as Error).stack ?? String(err)}\n`);
-  process.exit(2);
+  process.exitCode = 2;
 });

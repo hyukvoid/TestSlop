@@ -19,18 +19,16 @@
  * checked.
  */
 
-import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
+
 import type { ChangeSet, Finding } from "../core/types.ts";
 import { generateAlternatives, applyAlternative, type BehaviouralAlternative, type Confidence } from "./behaviour.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import { parseTestFile } from "../adapters/ts/parse-test.ts";
 import { buildTestToProductionMap, invertLinks } from "../core/link.ts";
-
-const exec = promisify(execFile);
+import { runTestCommand } from "./test-runner.ts";
 
 export type Outcome =
   /** Some linked test failed. The behaviour is verified. */
@@ -75,45 +73,6 @@ export interface VerifyReport {
     unverified: number;
     caughtElsewhere: number;
   };
-}
-
-interface RunResult {
-  code: number | null;
-  out: string;
-  timedOut: boolean;
-}
-
-function runCommand(command: string, cwd: string, timeoutMs: number): Promise<RunResult> {
-  return new Promise((resolve) => {
-    // Shell execution: the command comes from the developer's --test-command or their
-    // package.json, never from the analysed diff, so it is not an injection vector from
-    // untrusted content.
-    const child = spawn(command, {
-      cwd,
-      shell: true,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, CI: "true", FORCE_COLOR: "0", NO_COLOR: "1" },
-    });
-    const chunks: string[] = [];
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill();
-      resolve({ code: null, out: chunks.join(""), timedOut: true });
-    }, timeoutMs);
-    child.stdout?.on("data", (d: Buffer) => chunks.push(d.toString()));
-    child.stderr?.on("data", (d: Buffer) => chunks.push(d.toString()));
-    const finish = (code: number | null): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ code, out: chunks.join(""), timedOut: false });
-    };
-    child.on("close", finish);
-    child.on("error", () => finish(1));
-  });
 }
 
 export type Runner = "vitest" | "jest" | "mocha" | "tape" | "ava" | "node";
@@ -191,6 +150,8 @@ function failingTestFile(output: string): string | undefined {
 }
 
 export interface VerifyOptions {
+  /** Use an isolated disposable copy instead of retaining a warm scratch cache. */
+  reuseSandbox?: boolean;
   /** Maximum alternatives to execute. */
   budget?: number;
   testCommand?: string;
@@ -301,7 +262,7 @@ export async function verifyChangedBehaviour(
   try {
     sandbox = await createSandbox(
       changeSet.repoRoot,
-      opts.modulesFrom ? { modulesFrom: opts.modulesFrom } : {},
+      { reuse: opts.reuseSandbox ?? true, ...(opts.modulesFrom ? { modulesFrom: opts.modulesFrom } : {}) },
     );
   } catch (err) {
     return empty(`could not create a sandbox: ${(err as Error).message}`);
@@ -330,7 +291,7 @@ export async function verifyChangedBehaviour(
     let baselineCommand = baseCommand + testArgs(baselineTargets, runner);
     let runFullSuite = false;
     const baselineStart = Date.now();
-    let baselineRun = await runCommand(baselineCommand, sandbox.root, timeoutMs);
+    let baselineRun = await runTestCommand(baselineCommand, sandbox.root, timeoutMs);
 
     // Some runners enforce repository-wide checks such as coverage thresholds. A
     // filtered subset can then exit nonzero even though its tests and the full suite
@@ -338,7 +299,7 @@ export async function verifyChangedBehaviour(
     // suite for every mutant so the comparison remains valid.
     if (baselineRun.code !== 0 && baselineCommand !== baseCommand) {
       progress("targeted baseline failed; retrying with the full suite");
-      const fullSuiteRun = await runCommand(baseCommand, sandbox.root, timeoutMs);
+      const fullSuiteRun = await runTestCommand(baseCommand, sandbox.root, timeoutMs);
       if (fullSuiteRun.code === 0) {
         baselineRun = fullSuiteRun;
         baselineCommand = baseCommand;
@@ -415,7 +376,7 @@ export async function verifyChangedBehaviour(
       progress(
         `${index + 1}/${queue.length}  ${alt.file}:${alt.line}  ${alt.original} -> ${alt.replacement}  [${alt.distinguishing.description}]`,
       );
-      const run = await runCommand(command, sandbox.root, timeoutMs);
+      const run = await runTestCommand(command, sandbox.root, timeoutMs);
       await sandbox.write(alt.file, original);
       const durationMs = Date.now() - t0;
 
@@ -450,7 +411,7 @@ export async function verifyChangedBehaviour(
           continue;
         }
         await sandbox.write(r.alternative.file, mutated);
-        const run = await runCommand(baseCommand, sandbox.root, timeoutMs);
+        const run = await runTestCommand(baseCommand, sandbox.root, timeoutMs);
         await sandbox.write(r.alternative.file, original);
         if (!run.timedOut && run.code !== 0) {
           r.outcome = "caught-elsewhere";

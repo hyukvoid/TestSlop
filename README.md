@@ -1,46 +1,107 @@
-# TestSlop — POC-02 research archive
+# TestSlop
 
-**Decision: NO-GO for public v0.1.** POC-02 found a useful signal in the authored benchmark, but the evidence does not establish reliable value on independent coding-agent work. This repository preserves the prototype and its experiment record; nothing here is published or released.
+## Your tests pass.
+## So does the wrong code.
 
-## What was tested
+TestSlop finds one nearby implementation your tests also accept, then shows the input that separates it from your code.
 
-TestSlop checks whether tests changed alongside production code would catch nearby behavioral changes. It generates targeted mutations, runs tests against them, and reports surviving alternatives with a distinguishing input. The static rules remain in the prototype, but they did not support the original POC-01 thesis.
+```text
+Agent (demo): implementation complete; tests passed.
 
-On the 22 authored POC-01 task diffs, POC-02 generated 250 alternatives, deduplicated them to 73, and executed 69. Tests caught 57; 12 survived. Manual review classified 5 as clear true positives, 3 as useful review findings, 1 as strictly equivalent, 1 as out of contract, and 2 as out of domain. The 8 useful findings appeared across 7 tasks. Mean runtime was 8.2 seconds per task.
+$ testslop twin
+TestSlop
 
-The external evidence was weaker. The two valid second-model tasks produced no useful survivor; one of five executed alternatives was strictly equivalent. An exploratory ms history sample found one useful exact-year boundary gap among two usable baselines. A held-out validator sample generated no alternatives on three selected commits, so it did not measure test strength. These small samples are not pooled into a product precision estimate.
+Your implementation:
+  quantity <= 0
 
-Existing mutation tooling such as StrykerJS overlaps with changed-code mutation and test coverage. TestSlop's remaining distinction is describing a nearby input class in domain language; this POC did not show that difference warrants a public product.
+Evil Twin:
+  quantity <= 1
 
-## Run locally
+ORIGINAL    3 / 3 tests passed  ✓
+EVIL TWIN   3 / 3 tests passed  ✓
 
-Requires Node 20 or later. This is a research repository, not a published package.
+Your tests accept BOTH implementations.
+
+Missing witness:
+  quantity = 1
+```
+
+Run the same demo locally:
 
 ```bash
 npm install
-npm run typecheck
-npm test
-npm run build
+npm run demo
 ```
 
-The POC-02 verifier and raw experiment scripts are also retained:
+## Try it on a diff
+
+Build TestSlop, then point it at the repository where your coding agent just finished:
 
 ```bash
-node --experimental-strip-types scripts/replay-verification.ts
-node --experimental-strip-types scripts/external-bench.ts
-node --experimental-strip-types scripts/external-history.ts
+npm install
+npm run build
+node dist/cli.js twin --cwd /path/to/your/project
 ```
 
-External-agent and repository-history experiments require the relevant CLIs, network access, and their own credentials. Raw captured outputs are archived under `corpus/poc02/raw/`; consult its README before interpreting individual runs.
+From the project itself, run `node dist/cli.js twin`. It compares the working tree with `HEAD`; use `--staged` for the index or `--base main` for a branch. Override test discovery with `--test-command "npm test"` when needed.
 
-## Evidence and limitations
+The default command checks nearby boundary comparisons and shows at most one Twin. Both the original and the Twin run in disposable copies, and the report includes full-suite counts when the test runner prints them. The source tree is never edited.
 
-- [POC-02 report](docs/POC-02-REPORT.md) — hypotheses, experiments, results, and release decision.
-- [Evidence log](docs/EVIDENCE-LOG.md) — chronological experiment record, including failed runs and corrections.
-- [Manual finding classifications](corpus/poc02/manual-findings.md) — individual survivor reviews.
-- [Equivalence taxonomy](corpus/poc02/equivalence-taxonomy.md) — corrected categories and suppression assessment.
-- [Raw evidence archive](corpus/poc02/raw/README.md) — provenance and caveats for captured records.
+If no suitable alternative is found, TestSlop says so plainly:
 
-Survivors still need human review for reachability, contract relevance, and whether the input is in-domain. The verifier can generate no alternatives on changed lines, and its displayed distinguishing input can misdescribe the actionable side of a predicate. The small external samples do not establish general precision or recall. Mutation runs use the developer's privileges and scratch copies are source-protection measures, not a security boundary.
+```text
+No credible Evil Twin found for this diff.
 
-Prior phases remain available in [POC-01](docs/POC-01-REPORT.md), [POC-00](docs/POC-00-REPORT.md), and [architecture notes](docs/ARCHITECTURE.md).
+The tests may be tight, or this change may not fit TestSlop's supported shapes.
+No Twin found does not mean the code is verified correct.
+```
+
+## What is an Evil Twin?
+
+An Evil Twin is a small, real code change near the diff under review. TestSlop applies that change in a disposable copy and runs the tests. If both versions pass, it shows one pair and a missing witness: the simplest input the two implementations treat differently.
+
+For example, `quantity <= 0` and `quantity <= 1` differ at `quantity = 1`. The report does not decide which implementation matches your product contract. It gives you a concrete place to look.
+
+## A real historical example
+
+During development, TestSlop found an exact-year boundary in the real [`ms` commit that added month formatting](https://github.com/vercel/ms/commit/3ba274e015722cbe1cdaa40f14f8c2954d8df0f3). The formatter tests checked one millisecond above a year, but not exactly one year. Changing `msAbs >= y` to `msAbs > y` still passes the preserved formatter suite; at `31,557,600,000` milliseconds the output moves from `1y` to `12mo`. The offline replay uses `npx vitest run --reporter=dot` with locked Vitest 3.2.4; both versions pass 163/163 tests.
+
+Reproduce this focused historical replay offline:
+
+```bash
+npm run demo:history
+```
+
+The fixture preserves the upstream parent and commit source plus all four test files. The replay adapts only Jest's test-function import to the Vitest version already installed with TestSlop. It does not download the upstream repository or claim that the change shipped as a bug.
+
+## After an AI coding agent
+
+Run TestSlop after the agent's own tests pass. You can add this tool-agnostic instruction to any `AGENTS.md`, Cursor rule, or team checklist:
+
+> After implementation and tests are complete, run `testslop twin`. If it finds an Evil Twin, report the two expressions and the missing witness. A clean result does not prove correctness.
+
+TestSlop does not start, supervise, or call a coding agent.
+
+## Supported shapes
+
+The attention-first command currently looks for high-confidence JavaScript and TypeScript boundary comparisons on changed production lines: `<`, `<=`, `>`, and `>=`, with a concrete input value or a simple named threshold. It uses a nearby test runner detected from the project (`vitest`, `jest`, `mocha`, `ava`, `tape`, or `node --test`) or a `--test-command` override.
+
+`testslop scan` remains available as a secondary static check. `testslop verify` is the advanced view for inspecting multiple alternatives and their execution outcomes.
+
+## Limits
+
+TestSlop searches a narrow set of nearby alternatives. A Twin is evidence that the current suite also accepts that alternate behavior; it is not automatically a bug. The tool cannot infer every product contract, input domain, or reachability constraint. “No Twin found” can mean the tests are tight, the diff has no supported shape, or the bounded search did not generate the relevant case.
+
+The test command runs with your normal user permissions inside a scratch copy. This protects the analyzed source from TestSlop's edits; it is not a security sandbox.
+
+## Why the project is intentionally narrow
+
+Three internal research phases rejected the broader verification-product claims. The small developer-facing idea that remained interesting is a visible alternate implementation with a concrete witness. The reports, evidence log, benchmark definitions, regression tests, and raw records remain in the repository for anyone who wants the history:
+
+- [POC-00 report](docs/POC-00-REPORT.md)
+- [POC-01 report](docs/POC-01-REPORT.md)
+- [POC-02 report](docs/POC-02-REPORT.md)
+- [Evidence log](docs/EVIDENCE-LOG.md)
+- [Raw POC-02 records](corpus/poc02/raw/README.md)
+
+Jev is omitted from v0.1. Twin selection is deterministic; there is no confidence score or automatic suppression.

@@ -1,8 +1,8 @@
 {
   "name": "testslop",
-  "version": "0.0.0-poc.0",
-  "private": true,
-  "description": "Your coding agent made the tests green. Check what changed to get there.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Find one alternate implementation your tests also accept.",
   "type": "module",
   "bin": {
     "testslop": "./dist/cli.js"
@@ -20,7 +20,9 @@
     "cli": "node --experimental-strip-types src/cli.ts",
     "corpus:build": "node --experimental-strip-types scripts/build-corpus.ts",
     "evaluate": "node --experimental-strip-types scripts/evaluate.ts",
-    "lint:compare": "node --experimental-strip-types scripts/lint-compare.ts"
+    "lint:compare": "node --experimental-strip-types scripts/lint-compare.ts",
+    "demo": "npm run build && node scripts/hero-demo.mjs",
+    "demo:history": "npm run build && node scripts/replay-ms-history.mjs"
   },
   "dependencies": {
     "typescript": "5.9.2"

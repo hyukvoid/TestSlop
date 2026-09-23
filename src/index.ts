@@ -42,3 +42,6 @@ export {
 export { generateMutants, applyMutant } from "./mutation/mutators.ts";
 export type { Mutant } from "./mutation/mutators.ts";
 export type { MutationRunReport, MutantOutcome } from "./mutation/verify.ts";
+
+export { findEvilTwin, renderTwinReport, renderTwinJson } from "./mutation/twin.ts";
+export type { TwinOptions, TwinEvidence, TwinReport } from "./mutation/twin.ts";
