@@ -92,7 +92,7 @@ The attention-first command currently looks for high-confidence JavaScript and T
 
 TestSlop searches a narrow set of nearby alternatives. A Twin is evidence that the current suite also accepts that alternate behavior; it is not automatically a bug. The tool cannot infer every product contract, input domain, or reachability constraint. “No Twin found” can mean the tests are tight, the diff has no supported shape, or the bounded search did not generate the relevant case.
 
-The test command runs with your normal user permissions inside a scratch copy. This protects the analyzed source from TestSlop's edits; it is not a security sandbox.
+The test command runs with your normal user permissions inside a scratch copy. This protects the analyzed source from TestSlop's edits; it is not a security sandbox. TestSlop does not replace general-purpose mutation testing.
 
 ## Why the project is intentionally narrow
 

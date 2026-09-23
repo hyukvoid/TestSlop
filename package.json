@@ -33,5 +33,13 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyukvoid/Testslop.git"
+  },
+  "homepage": "https://github.com/hyukvoid/Testslop#readme",
+  "bugs": {
+    "url": "https://github.com/hyukvoid/Testslop/issues"
   }
 }
