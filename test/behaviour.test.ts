@@ -9,8 +9,12 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { collectChangeSet } from "../src/core/changeset.ts";
 import { generateAlternatives, applyAlternative } from "../src/mutation/behaviour.ts";
 import type { BehaviouralAlternative } from "../src/mutation/behaviour.ts";
+import { verifyChangedBehaviour } from "../src/mutation/behaviour-verify.ts";
 
 function gen(src: string, lines: number[] = []): BehaviouralAlternative[] {
   return generateAlternatives("src/subject.ts", src, { lines });
@@ -352,5 +356,370 @@ describe("one expression yields one finding", () => {
     // POC-01 reported this as two survivors; POC-02's first pass still did, because the
     // keys differed by which token was edited.
     expect(onExpression).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sandbox correctness
+// ---------------------------------------------------------------------------
+
+describe("sandbox", () => {
+  it("REGRESSION: a reused sandbox does not keep files the new revision lacks", async () => {
+    // Found by running the external-history harness twice: it reuses one worktree path
+    // for every commit, and a stale test file from the previous commit stayed in the
+    // sandbox and kept killing mutants. The same 18 commits reported 2 unverified
+    // behaviours on one run and 0 on the next.
+    const { createSandbox } = await import("../src/mutation/sandbox.ts");
+    const { mkdtemp, mkdir, writeFile, rm, readdir } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const nodePath = await import("node:path");
+
+    const source = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-src-"));
+    await mkdir(nodePath.join(source, "src"), { recursive: true });
+    await writeFile(nodePath.join(source, "src", "kept.ts"), "export const a = 1;", "utf8");
+    await writeFile(nodePath.join(source, "src", "removed.ts"), "export const b = 2;", "utf8");
+
+    const first = await createSandbox(source);
+    expect((await readdir(nodePath.join(first.root, "src"))).sort()).toEqual(["kept.ts", "removed.ts"]);
+
+    // Simulate checking out a revision that no longer has one of the files.
+    await rm(nodePath.join(source, "src", "removed.ts"), { force: true });
+
+    const second = await createSandbox(source);
+    expect(await readdir(nodePath.join(second.root, "src"))).toEqual(["kept.ts"]);
+
+    await second.dispose();
+    await rm(source, { recursive: true, force: true });
+  });
+
+  it("never writes to the analysed repository", async () => {
+    const { createSandbox } = await import("../src/mutation/sandbox.ts");
+    const { mkdtemp, mkdir, writeFile, readFile, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const nodePath = await import("node:path");
+
+    const source = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-src-"));
+    await mkdir(nodePath.join(source, "src"), { recursive: true });
+    const original = "export const threshold = 10;";
+    await writeFile(nodePath.join(source, "src", "a.ts"), original, "utf8");
+
+    const sandbox = await createSandbox(source, { reuse: false });
+    await sandbox.write("src/a.ts", "export const threshold = 11;");
+
+    // The mutation landed in the sandbox...
+    expect(await sandbox.read("src/a.ts")).toContain("11");
+    // ...and the developer's file is untouched.
+    expect(await readFile(nodePath.join(source, "src", "a.ts"), "utf8")).toBe(original);
+
+    await sandbox.dispose();
+    await rm(source, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Applying an alternative to the wrong text
+// ---------------------------------------------------------------------------
+
+describe("applying an alternative", () => {
+  it("REGRESSION: refuses to splice when the span no longer matches", () => {
+    // The bug this prevents produced a fabricated external finding.
+    //
+    // Analysis reads changed files from the git blob (LF). On Windows with
+    // `core.autocrlf=true` the file on disk is CRLF, one byte longer per line. Applying
+    // blob offsets to the on-disk text put the edit ~150 characters early; on `bytes`
+    // commit 6ec88d8 it overwrote the `/` of a `//` comment with `/`. Nothing changed,
+    // every test passed, and the verifier reported unverified behaviour — a finding
+    // manufactured by the tool doing nothing.
+    const lf = [
+      "export function toBytes(unit: number, value: number): number {",
+      "  // Retrieve the value and the unit, then drop partial bytes.",
+      "  return Math.floor(unit * value);",
+      "}",
+      "",
+    ].join("\n");
+
+    const alt = generateAlternatives("index.ts", lf, { lines: [3] })[0];
+    expect(alt).toBeDefined();
+    expect(applyAlternative(lf, alt!)).toContain("unit / value");
+
+    const crlf = lf.replace(/\n/g, "\r\n");
+    expect(() => applyAlternative(crlf, alt!)).toThrow(/no longer matches its source span/);
+  });
+
+  it("still applies when a numeric literal is spelled differently than parsed", () => {
+    // `0x400` parses to the text "1024"; comparing spellings would reject a valid edit.
+    const src = `export function f(n: number) { return n < 0x400; }`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [1] });
+    const shift = alts.find((a) => a.kind === "boundary" && /^\d/.test(a.original));
+    if (shift) expect(() => applyAlternative(src, shift)).not.toThrow();
+  });
+});
+
+describe("capability fallbacks are not behavioural alternatives", () => {
+  it("REGRESSION (bytes 028f63ec): a polyfill fallback yields nothing", () => {
+    // The only external commit that reported findings reported three, and all three were
+    // about a `Number.isFinite` polyfill: the `||`, the `&&` inside the fallback body,
+    // and the `===` inside it. On any runtime with the built-in, the fallback is dead
+    // code, so no test can distinguish them.
+    const src =
+      `var numberIsFinite = Number.isFinite || function (v) { return typeof v === 'number' && isFinite(v); };\n`;
+    expect(generateAlternatives("index.js", src, { lines: [1] })).toEqual([]);
+  });
+
+  it("still probes a genuine `||` inside a condition", () => {
+    const src = `export function f(a: boolean, b: boolean) {\n  if (a || b) return 1;\n  return 0;\n}\n`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [2] });
+    expect(alts.map((a) => a.kind)).toContain("logic");
+  });
+});
+
+describe("loop scaffolding and numeric bases", () => {
+  it("REGRESSION (qs 0d415f34): a for-loop's counter, bound and radix yield nothing", () => {
+    // Three of that commit's four findings were "i exactly equal to keys.length",
+    // "any input that reaches `i = 0`" and a `parseInt(..., 10)` radix shift. All true,
+    // none nameable as an input the developer can constrain.
+    const src = `export function f(keys: string[], max: number) {
+  for (var i = 0; i < keys.length; ++i) {
+    var num = parseInt(keys[i], 10);
+    if (num > max) max = num;
+  }
+  return max;
+}
+`;
+    const alts = generateAlternatives("lib/utils.js", src, { lines: [2, 3] });
+    expect(alts).toEqual([]);
+  });
+
+  it("still probes a comparison in a loop condition that is not the counter", () => {
+    const src = `export function f(remaining: number, limit: number) {
+  for (;remaining < limit;) { remaining += 1; }
+  return remaining;
+}
+`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [2] });
+    expect(alts.some((a) => a.kind === "boundary")).toBe(true);
+  });
+
+  it("still probes a guard inside the loop body", () => {
+    const src = `export function f(keys: number[]) {
+  for (var i = 0; i < keys.length; ++i) {
+    if (keys[i] > 100) return true;
+  }
+  return false;
+}
+`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [3] });
+    expect(alts.some((a) => a.distinguishing.description.includes("100"))).toBe(true);
+  });
+});
+
+describe("dependency linking", () => {
+  it("links a dependency tree from outside the analysed directory", async () => {
+    // The reason this option exists: a `node_modules` junction placed inside a git
+    // worktree was destroyed — along with the real repository's dependencies — by
+    // `git worktree remove --force`, which deletes through a junction. Every baseline
+    // after the first commit went red and the harness reported that as a fact about the
+    // repository rather than as its own damage.
+    const { createSandbox } = await import("../src/mutation/sandbox.ts");
+    const { mkdtemp, mkdir, writeFile, readFile, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const nodePath = await import("node:path");
+
+    const deps = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-deps-"));
+    await mkdir(nodePath.join(deps, "left-pad"), { recursive: true });
+    await writeFile(nodePath.join(deps, "left-pad", "index.js"), "module.exports = 1;", "utf8");
+
+    const source = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-src-"));
+    await writeFile(nodePath.join(source, "a.js"), "module.exports = 2;", "utf8");
+
+    const sandbox = await createSandbox(source, { reuse: false, modulesFrom: deps });
+    const linked = await readFile(
+      nodePath.join(sandbox.root, "node_modules", "left-pad", "index.js"),
+      "utf8",
+    );
+    expect(linked).toContain("module.exports = 1;");
+
+    await sandbox.dispose();
+    // Disposing the sandbox must not reach through the link.
+    expect(await readFile(nodePath.join(deps, "left-pad", "index.js"), "utf8")).toContain("= 1;");
+
+    await rm(deps, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+  });
+});
+
+describe("string building is never arithmetic", () => {
+  it("REGRESSION (qs 963e538c): a chained concatenation offers no `-` alternative", () => {
+    const src = `export function message(limit: number): string {
+  return "Array limit exceeded. Only " + limit + " element" + (limit === 1 ? "" : "s") + " allowed.";
+}
+`;
+    const alts = generateAlternatives("lib/utils.js", src, { lines: [2] });
+    expect(alts.filter((a) => a.kind === "arithmetic")).toEqual([]);
+  });
+
+  it("still offers `-` for real arithmetic", () => {
+    const src = `export function f(available: number, wanted: number) { return available - wanted; }`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [1] });
+    expect(alts.some((a) => a.kind === "arithmetic")).toBe(true);
+  });
+});
+
+describe("provable equivalences are never reported", () => {
+  it("REGRESSION (qs 0d415f34): an idempotent update guard is skipped", () => {
+    // `if (num > max) { max = num; }` — relaxing `>` only adds num === max, where the
+    // body assigns max the value it already has. No test can ever kill it.
+    const src = `export function maxIndex(keys: number[], min: number): number {
+  var max = min;
+  for (var i = 0; i < keys.length; ++i) {
+    var num = keys[i];
+    if (num > max) {
+      max = num;
+    }
+  }
+  return max;
+}
+`;
+    const alts = generateAlternatives("lib/utils.js", src, { lines: [5] });
+    expect(alts).toEqual([]);
+  });
+
+  it("still probes an update guard that does more than assign", () => {
+    const src = `export function f(num: number, max: number, log: number[]): number {
+  if (num > max) {
+    max = num;
+    log.push(num);
+  }
+  return max;
+}
+`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [2] });
+    expect(alts.some((a) => a.kind === "boundary")).toBe(true);
+  });
+
+  it("REGRESSION (camelcase 552b7f1d): a seed for a reassigned variable is skipped", () => {
+    const src = `export function f(input: string): string {
+  let previousWasUppercase = false;
+  let out = "";
+  for (const ch of input) {
+    out += previousWasUppercase ? ch.toLowerCase() : ch;
+    previousWasUppercase = ch === ch.toUpperCase();
+  }
+  return out;
+}
+`;
+    const alts = generateAlternatives("index.js", src, { lines: [2] });
+    expect(alts).toEqual([]);
+  });
+
+  it("still probes a constant that is never reassigned", () => {
+    const src = `export function f(n: number): boolean {
+  const LIMIT = 100;
+  return n > LIMIT;
+}
+`;
+    const alts = generateAlternatives("src/a.ts", src, { lines: [2] });
+    expect(alts.some((a) => a.original === "100")).toBe(true);
+  });
+});
+
+describe("baseline fallback", () => {
+  it("uses the full suite when a targeted run fails a global check", async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const nodePath = await import("node:path");
+    const source = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-baseline-"));
+    const scratchHash = createHash("sha1").update(nodePath.resolve(source)).digest("hex").slice(0, 12);
+    const git = (args: string[]): void => {
+      execFileSync("git", args, { cwd: source, stdio: "ignore" });
+    };
+
+    try {
+      await mkdir(nodePath.join(source, "src"), { recursive: true });
+      await mkdir(nodePath.join(source, "test"), { recursive: true });
+      await writeFile(
+        nodePath.join(source, "package.json"),
+        JSON.stringify({ private: true, devDependencies: { jest: "0" } }),
+        "utf8",
+      );
+      await writeFile(
+        nodePath.join(source, "src", "subject.ts"),
+        "export function reserve(quantity: number): boolean {\n  return quantity > 0;\n}\n",
+        "utf8",
+      );
+      await writeFile(nodePath.join(source, "test", "subject.test.ts"), "// original test\n", "utf8");
+      await writeFile(
+        nodePath.join(source, "check-suite.cjs"),
+        [
+          'const fs = require("node:fs");',
+          "if (process.argv.length > 2) process.exit(1);",
+          'const text = fs.readFileSync("src/subject.ts", "utf8");',
+          'process.exit(text.includes("quantity >= 0") ? 0 : 1);',
+        ].join("\n"),
+        "utf8",
+      );
+
+      git(["init", "-q", "-b", "main"]);
+      git(["config", "user.name", "TestSlop regression"]);
+      git(["config", "user.email", "testslop-regression@example.invalid"]);
+      git(["add", "-A"]);
+      git(["commit", "-q", "-m", "baseline"]);
+
+      await writeFile(
+        nodePath.join(source, "src", "subject.ts"),
+        "export function reserve(quantity: number): boolean {\n  return quantity >= 0;\n}\n",
+        "utf8",
+      );
+      await writeFile(nodePath.join(source, "test", "subject.test.ts"), "// added test\n", "utf8");
+
+      const changeSet = await collectChangeSet({ cwd: source, base: "HEAD" });
+      const report = await verifyChangedBehaviour(changeSet, {
+        budget: 4,
+        timeoutMs: 30_000,
+        testCommand: "node check-suite.cjs",
+        validateLinking: false,
+      });
+
+      expect(report.baseline.ok).toBe(true);
+      expect(report.testCommand).toBe("node check-suite.cjs");
+      expect(report.counts.executed).toBeGreaterThan(0);
+      expect(report.counts.caught).toBe(report.counts.executed);
+      expect(report.results.every((result) => result.testedWith[0] === "<full suite>")).toBe(true);
+    } finally {
+      await rm(nodePath.join(os.tmpdir(), "testslop-" + scratchHash), { recursive: true, force: true });
+      await rm(source, { recursive: true, force: true });
+    }
+  });
+});
+describe("junctioned dependency linking", () => {
+  it("resolves nested node_modules junctions and preserves their source", async () => {
+    const { createSandbox } = await import("../src/mutation/sandbox.ts");
+    const { mkdtemp, mkdir, writeFile, readFile, rm, symlink } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const nodePath = await import("node:path");
+    const deps = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-real-deps-"));
+    const source = await mkdtemp(nodePath.join(os.tmpdir(), "testslop-junction-src-"));
+    const dependency = nodePath.join(deps, "jest-preset", "index.js");
+    await mkdir(nodePath.dirname(dependency), { recursive: true });
+    await writeFile(dependency, "module.exports = true;", "utf8");
+    await symlink(deps, nodePath.join(source, "node_modules"), "junction");
+
+    const sandbox = await createSandbox(source, { reuse: false });
+    try {
+      const sandboxCopy = await readFile(
+        nodePath.join(sandbox.root, "node_modules", "jest-preset", "index.js"),
+        "utf8",
+      );
+      expect(sandboxCopy).toBe("module.exports = true;");
+    } finally {
+      await sandbox.dispose();
+    }
+
+    try {
+      expect(await readFile(dependency, "utf8")).toBe("module.exports = true;");
+    } finally {
+      await rm(source, { recursive: true, force: true });
+      await rm(deps, { recursive: true, force: true });
+    }
   });
 });

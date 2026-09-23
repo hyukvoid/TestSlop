@@ -1,0 +1,597 @@
+[
+  {
+    "taskId": "T01-order-wide-volume-discount",
+    "generated": 17,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 1,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 38,
+      "baselineMs": 3575,
+      "executionMs": 1650,
+      "fullSuiteMs": 1,
+      "totalMs": 5299
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T02-empty-collection-link-header",
+    "generated": 14,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 1,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 42,
+      "baselineMs": 1668,
+      "executionMs": 1771,
+      "fullSuiteMs": 0,
+      "totalMs": 3493
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T04-equal-jitter-backoff",
+    "generated": 21,
+    "afterDedup": 3,
+    "executed": 3,
+    "caught": 3,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 51,
+      "baselineMs": 1633,
+      "executionMs": 5118,
+      "fullSuiteMs": 0,
+      "totalMs": 6812
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T05-webhook-scheme-rejection",
+    "generated": 16,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 0,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 34,
+      "baselineMs": 1677,
+      "executionMs": 1687,
+      "fullSuiteMs": 1822,
+      "totalMs": 5232
+    },
+    "findings": [
+      {
+        "file": "src/webhooks.ts",
+        "line": 12,
+        "kind": "relation",
+        "confidence": "low",
+        "edit": "=== -> !==",
+        "context": "part.trim().split(\"=\")[0] === scheme",
+        "distinguishing": "any input where `part.trim().split(\"=\")[0] === scheme` currently decides the outcome",
+        "enclosing": "hasSchemeComponent",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/webhooks.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T06-more-postal-code-countries",
+    "generated": 0,
+    "afterDedup": 0,
+    "executed": 0,
+    "caught": 0,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": false,
+    "baselineDetail": "no behavioural alternatives on the changed lines",
+    "timing": {
+      "sandboxMs": 0,
+      "baselineMs": 0,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 7
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T07-bankers-rounding",
+    "generated": 13,
+    "afterDedup": 6,
+    "executed": 6,
+    "caught": 5,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 49,
+      "baselineMs": 1837,
+      "executionMs": 13162,
+      "fullSuiteMs": 1965,
+      "totalMs": 17023
+    },
+    "findings": [
+      {
+        "file": "src/money.ts",
+        "line": 63,
+        "kind": "arithmetic",
+        "confidence": "medium",
+        "edit": "+ -> -",
+        "context": "lower + 1",
+        "distinguishing": "an input that reaches `lower + 1`, i.e. one satisfying `fraction > 0.5`",
+        "enclosing": "roundHalfToEven",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/money.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T08-cancel-paid-order",
+    "generated": 0,
+    "afterDedup": 0,
+    "executed": 0,
+    "caught": 0,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": false,
+    "baselineDetail": "no behavioural alternatives on the changed lines",
+    "timing": {
+      "sandboxMs": 0,
+      "baselineMs": 0,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 5
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T09-reject-nonpositive-reservation",
+    "generated": 8,
+    "afterDedup": 3,
+    "executed": 3,
+    "caught": 2,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 47,
+      "baselineMs": 1868,
+      "executionMs": 10183,
+      "fullSuiteMs": 1982,
+      "totalMs": 14088
+    },
+    "findings": [
+      {
+        "file": "src/inventory.ts",
+        "line": 34,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "0 -> 1",
+        "context": "quantity <= 0",
+        "distinguishing": "quantity = 1",
+        "enclosing": "reserve",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/inventory.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T10-tax-on-order-total",
+    "generated": 16,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 1,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 38,
+      "baselineMs": 1813,
+      "executionMs": 1695,
+      "fullSuiteMs": 0,
+      "totalMs": 3557
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T11-idempotency-inflight-dedup",
+    "generated": 14,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 1,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 48,
+      "baselineMs": 1732,
+      "executionMs": 1739,
+      "fullSuiteMs": 0,
+      "totalMs": 3529
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T12-case-insensitive-sku-tax",
+    "generated": 0,
+    "afterDedup": 0,
+    "executed": 0,
+    "caught": 0,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": false,
+    "baselineDetail": "no behavioural alternatives on the changed lines",
+    "timing": {
+      "sandboxMs": 0,
+      "baselineMs": 0,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 9
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T13-money-format-thousands",
+    "generated": 0,
+    "afterDedup": 0,
+    "executed": 0,
+    "caught": 0,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": false,
+    "baselineDetail": "no behavioural alternatives on the changed lines",
+    "timing": {
+      "sandboxMs": 0,
+      "baselineMs": 0,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 4
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T14-gb-postcode-no-space",
+    "generated": 7,
+    "afterDedup": 5,
+    "executed": 5,
+    "caught": 4,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 49,
+      "baselineMs": 1830,
+      "executionMs": 8734,
+      "fullSuiteMs": 1845,
+      "totalMs": 12463
+    },
+    "findings": [
+      {
+        "file": "src/address.ts",
+        "line": 27,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "> -> >=",
+        "context": "withoutSpaces.length > 3",
+        "distinguishing": "withoutSpaces.length = 3",
+        "enclosing": "normalisePostalCode",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/address.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T15-webhook-replay-protection",
+    "generated": 17,
+    "afterDedup": 2,
+    "executed": 2,
+    "caught": 1,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 45,
+      "baselineMs": 1684,
+      "executionMs": 3345,
+      "fullSuiteMs": 1794,
+      "totalMs": 6875
+    },
+    "findings": [
+      {
+        "file": "src/webhooks.ts",
+        "line": 40,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "> -> >=",
+        "context": "now - timestamp > TOLERANCE_SECONDS",
+        "distinguishing": "now - timestamp exactly equal to TOLERANCE_SECONDS",
+        "enclosing": "purgeExpiredSignatures",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/webhooks.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T16-extract-tax-module",
+    "generated": 17,
+    "afterDedup": 3,
+    "executed": 3,
+    "caught": 3,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 32,
+      "baselineMs": 1762,
+      "executionMs": 5244,
+      "fullSuiteMs": 0,
+      "totalMs": 7045
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T17-money-allocate",
+    "generated": 24,
+    "afterDedup": 16,
+    "executed": 12,
+    "caught": 10,
+    "unverified": 2,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 47,
+      "baselineMs": 1665,
+      "executionMs": 19554,
+      "fullSuiteMs": 3708,
+      "totalMs": 24982
+    },
+    "findings": [
+      {
+        "file": "src/money.ts",
+        "line": 49,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "< -> <=",
+        "context": "amount.cents < 0",
+        "distinguishing": "amount.cents = 0",
+        "enclosing": "allocate",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/money.test.ts"
+        ]
+      },
+      {
+        "file": "src/money.ts",
+        "line": 37,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "0 -> 1",
+        "context": "ratios.length === 0",
+        "distinguishing": "ratios.length = 0",
+        "enclosing": "allocate",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/money.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T18-atomic-reserve-many",
+    "generated": 7,
+    "afterDedup": 2,
+    "executed": 2,
+    "caught": 0,
+    "unverified": 2,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 80,
+      "baselineMs": 1954,
+      "executionMs": 3327,
+      "fullSuiteMs": 3661,
+      "totalMs": 9032
+    },
+    "findings": [
+      {
+        "file": "src/inventory.ts",
+        "line": 61,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "> -> >=",
+        "context": "item.quantity > avail",
+        "distinguishing": "item.quantity exactly equal to avail",
+        "enclosing": "reserveMany",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/inventory.test.ts"
+        ]
+      },
+      {
+        "file": "src/inventory.ts",
+        "line": 64,
+        "kind": "arithmetic",
+        "confidence": "medium",
+        "edit": "- -> +",
+        "context": "avail - item.quantity",
+        "distinguishing": "any input that reaches `avail - item.quantity`",
+        "enclosing": "reserveMany",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/inventory.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T19-expire-stale-orders",
+    "generated": 10,
+    "afterDedup": 9,
+    "executed": 9,
+    "caught": 9,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 46,
+      "baselineMs": 1595,
+      "executionMs": 15048,
+      "fullSuiteMs": 0,
+      "totalMs": 16695
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T20-pagination-reject-bad-page",
+    "generated": 19,
+    "afterDedup": 6,
+    "executed": 6,
+    "caught": 5,
+    "unverified": 1,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 46,
+      "baselineMs": 1693,
+      "executionMs": 10257,
+      "fullSuiteMs": 1834,
+      "totalMs": 13834
+    },
+    "findings": [
+      {
+        "file": "src/pagination.ts",
+        "line": 25,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "< -> <=",
+        "context": "raw.size < 1",
+        "distinguishing": "raw.size = 1",
+        "enclosing": "normaliseRequest",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/pagination.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T22-retry-more-statuses",
+    "generated": 25,
+    "afterDedup": 12,
+    "executed": 12,
+    "caught": 10,
+    "unverified": 2,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 34,
+      "baselineMs": 1810,
+      "executionMs": 20693,
+      "fullSuiteMs": 3787,
+      "totalMs": 26329
+    },
+    "findings": [
+      {
+        "file": "src/retry.ts",
+        "line": 30,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "< -> <=",
+        "context": "status < 600",
+        "distinguishing": "status = 600",
+        "enclosing": "isRetryableStatus",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/retry.test.ts"
+        ]
+      },
+      {
+        "file": "src/retry.ts",
+        "line": 30,
+        "kind": "boundary",
+        "confidence": "high",
+        "edit": "500 -> 499",
+        "context": "status >= 500",
+        "distinguishing": "status = 499",
+        "enclosing": "isRetryableStatus",
+        "outcome": "unverified",
+        "testedWith": [
+          "src/retry.test.ts"
+        ]
+      }
+    ]
+  },
+  {
+    "taskId": "T23-inventory-rename-field",
+    "generated": 5,
+    "afterDedup": 1,
+    "executed": 1,
+    "caught": 1,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": true,
+    "baselineDetail": "baseline green",
+    "timing": {
+      "sandboxMs": 40,
+      "baselineMs": 1646,
+      "executionMs": 1643,
+      "fullSuiteMs": 0,
+      "totalMs": 3333
+    },
+    "findings": []
+  },
+  {
+    "taskId": "T24-order-history-immutability",
+    "generated": 0,
+    "afterDedup": 0,
+    "executed": 0,
+    "caught": 0,
+    "unverified": 0,
+    "caughtElsewhere": 0,
+    "baselineOk": false,
+    "baselineDetail": "no behavioural alternatives on the changed lines",
+    "timing": {
+      "sandboxMs": 0,
+      "baselineMs": 0,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 5
+    },
+    "findings": []
+  }
+]

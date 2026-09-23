@@ -199,6 +199,8 @@ export interface VerifyOptions {
   stopAfterFindings?: number;
   /** Run the full suite on survivors to validate linking. On by default. */
   validateLinking?: boolean;
+  /** Dependency tree to link into the sandbox, when it is not at `<repoRoot>/node_modules`. */
+  modulesFrom?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -262,7 +264,11 @@ export async function verifyChangedBehaviour(
   // ---- Generate before paying for a sandbox -------------------------------
   const perFile: BehaviouralAlternative[][] = [];
   let generatedRaw = 0;
+  // The exact text every alternative's offsets were computed against. Mutation must use
+  // this and nothing else — see the note on `applyAlternative`.
+  const analysed = new Map<string, string>();
   for (const file of changedProduction) {
+    analysed.set(file.path, file.after!);
     const all = generateAlternatives(file.path, file.after!, { lines: [] });
     generatedRaw += all.length;
     const scoped = generateAlternatives(file.path, file.after!, { lines: file.addedLines });
@@ -293,7 +299,10 @@ export async function verifyChangedBehaviour(
   const sandboxStart = Date.now();
   let sandbox: Sandbox;
   try {
-    sandbox = await createSandbox(changeSet.repoRoot);
+    sandbox = await createSandbox(
+      changeSet.repoRoot,
+      opts.modulesFrom ? { modulesFrom: opts.modulesFrom } : {},
+    );
   } catch (err) {
     return empty(`could not create a sandbox: ${(err as Error).message}`);
   }
@@ -307,10 +316,38 @@ export async function verifyChangedBehaviour(
       return linked.length > 0 ? linked : changedTestFiles;
     };
 
+    // Normalise the sandbox to the analysed revision before measuring anything.
+    //
+    // The sandbox is a copy of the working tree; when `--head` is used, the analysed
+    // content came from a git blob instead, and on Windows with `core.autocrlf` the two
+    // differ by a byte per line. Writing the analysed text first makes the baseline and
+    // every mutant run differ by exactly one edit, and nothing else.
+    for (const [rel, content] of analysed) {
+      await sandbox.write(rel, content).catch(() => {});
+    }
+
     const baselineTargets = changedTestFiles;
-    const baselineCommand = baseCommand + testArgs(baselineTargets, runner);
+    let baselineCommand = baseCommand + testArgs(baselineTargets, runner);
+    let runFullSuite = false;
     const baselineStart = Date.now();
-    const baselineRun = await runCommand(baselineCommand, sandbox.root, timeoutMs);
+    let baselineRun = await runCommand(baselineCommand, sandbox.root, timeoutMs);
+
+    // Some runners enforce repository-wide checks such as coverage thresholds. A
+    // filtered subset can then exit nonzero even though its tests and the full suite
+    // pass. Retry the baseline once without filters; if green, use that same full
+    // suite for every mutant so the comparison remains valid.
+    if (baselineRun.code !== 0 && baselineCommand !== baseCommand) {
+      progress("targeted baseline failed; retrying with the full suite");
+      const fullSuiteRun = await runCommand(baseCommand, sandbox.root, timeoutMs);
+      if (fullSuiteRun.code === 0) {
+        baselineRun = fullSuiteRun;
+        baselineCommand = baseCommand;
+        runFullSuite = true;
+      } else {
+        baselineRun = fullSuiteRun;
+        baselineCommand = baseCommand;
+      }
+    }
     const baselineMs = Date.now() - baselineStart;
 
     if (baselineRun.code !== 0) {
@@ -329,7 +366,7 @@ export async function verifyChangedBehaviour(
         counts: { generated: generatedRaw, deduplicated, executed: 0, caught: 0, unverified: 0, caughtElsewhere: 0 },
       };
     }
-    progress(`baseline green in ${baselineMs} ms`);
+    progress(runFullSuite ? `full-suite baseline green in ${baselineMs} ms` : `baseline green in ${baselineMs} ms`);
 
     // ---- Execute ---------------------------------------------------------
     const originals = new Map<string, string>();
@@ -344,20 +381,37 @@ export async function verifyChangedBehaviour(
       }
 
       if (!originals.has(alt.file)) {
-        const content = await sandbox.read(alt.file).catch(() => undefined);
+        // Deliberately the analysed content, not `sandbox.read`. Reading it back would
+        // reintroduce the line-ending offset bug this map exists to prevent.
+        const content = analysed.get(alt.file);
         if (content === undefined) {
-          results.push({ alternative: alt, outcome: "skipped", durationMs: 0, testedWith: [], detail: "file missing in sandbox" });
+          results.push({ alternative: alt, outcome: "skipped", durationMs: 0, testedWith: [], detail: "no analysed content for file" });
           continue;
         }
         originals.set(alt.file, content);
       }
       const original = originals.get(alt.file)!;
 
-      const targets = linkedFor(alt.file);
-      const command = baseCommand + testArgs(targets, runner);
+      const targets = runFullSuite ? ["<full suite>"] : linkedFor(alt.file);
+      const command = runFullSuite ? baseCommand : baseCommand + testArgs(targets, runner);
       const t0 = Date.now();
 
-      await sandbox.write(alt.file, applyAlternative(original, alt));
+      let mutated: string;
+      try {
+        mutated = applyAlternative(original, alt);
+      } catch (err) {
+        // A finding must never come from an edit that did not happen.
+        results.push({
+          alternative: alt,
+          outcome: "error",
+          durationMs: Date.now() - t0,
+          testedWith: [],
+          detail: (err as Error).message,
+        });
+        continue;
+      }
+
+      await sandbox.write(alt.file, mutated);
       progress(
         `${index + 1}/${queue.length}  ${alt.file}:${alt.line}  ${alt.original} -> ${alt.replacement}  [${alt.distinguishing.description}]`,
       );
@@ -381,12 +435,21 @@ export async function verifyChangedBehaviour(
     // kills it, the behaviour *is* verified and the finding would have been a false
     // alarm caused by too-narrow linking.
     let fullSuiteMs = 0;
-    if (validateLinking) {
+    if (validateLinking && !runFullSuite) {
       const fullStart = Date.now();
       for (const r of results) {
         if (r.outcome !== "unverified") continue;
         const original = originals.get(r.alternative.file)!;
-        await sandbox.write(r.alternative.file, applyAlternative(original, r.alternative));
+        let mutated: string;
+        try {
+          mutated = applyAlternative(original, r.alternative);
+        } catch (err) {
+          r.outcome = "error";
+          r.detail = (err as Error).message;
+          unverifiedCount -= 1;
+          continue;
+        }
+        await sandbox.write(r.alternative.file, mutated);
         const run = await runCommand(baseCommand, sandbox.root, timeoutMs);
         await sandbox.write(r.alternative.file, original);
         if (!run.timedOut && run.code !== 0) {

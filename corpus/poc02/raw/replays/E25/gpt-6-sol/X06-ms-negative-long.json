@@ -1,0 +1,117 @@
+{
+  "experiment": "E25 nested dependency junction replay",
+  "taskId": "X06-ms-negative-long",
+  "repo": "ms",
+  "origin": "https://github.com/vercel/ms",
+  "sourceCommit": "4ff48cec099f0514c3e9bbca18706c9c21122bfb",
+  "agent": {
+    "name": "codex-cli",
+    "version": "codex-cli 0.155.1",
+    "model": "gpt-6-sol"
+  },
+  "rawRecord": "work/extbench-results-codex/gpt-6-sol/X06-ms-negative-long.json",
+  "diffSha256": "fff476e746f987ee6876e7987669293f3f968ce58fcafa061220c0285583fa0e",
+  "diffMatchesRawRecord": true,
+  "verification": {
+    "baseline": {
+      "ok": true,
+      "detail": "baseline green",
+      "durationMs": 8022
+    },
+    "testCommand": "npx jest --ci --silent",
+    "results": [
+      {
+        "alternative": {
+          "file": "src/index.ts",
+          "line": 238,
+          "start": 5962,
+          "end": 5963,
+          "original": "<",
+          "replacement": "<=",
+          "context": "ms < 0",
+          "kind": "boundary",
+          "confidence": "high",
+          "distinguishing": {
+            "description": "ms = 0",
+            "key": "src/index.ts|ms|eq|0",
+            "subject": "ms",
+            "value": "0"
+          },
+          "priority": 0,
+          "enclosing": "round"
+        },
+        "outcome": "unverified",
+        "durationMs": 2624,
+        "testedWith": [
+          "<full suite>"
+        ]
+      },
+      {
+        "alternative": {
+          "file": "src/index.ts",
+          "line": 246,
+          "start": 6184,
+          "end": 6185,
+          "original": "1",
+          "replacement": "2",
+          "context": "Math.abs(rounded) === 1",
+          "kind": "boundary",
+          "confidence": "high",
+          "distinguishing": {
+            "description": "Math.abs(rounded) = 1",
+            "key": "src/index.ts|Math.abs(rounded)|eq|1",
+            "subject": "Math.abs(rounded)",
+            "value": "1"
+          },
+          "priority": 1,
+          "enclosing": "plural"
+        },
+        "outcome": "caught",
+        "durationMs": 2567,
+        "testedWith": [
+          "<full suite>"
+        ]
+      },
+      {
+        "alternative": {
+          "file": "src/index.ts",
+          "line": 237,
+          "start": 5943,
+          "end": 5944,
+          "original": "/",
+          "replacement": "*",
+          "context": "Math.abs(ms) / n",
+          "kind": "arithmetic",
+          "confidence": "medium",
+          "distinguishing": {
+            "description": "any input that reaches `Math.abs(ms) / n`",
+            "key": "src/index.ts|Math.abs(ms)/n|value"
+          },
+          "priority": 2,
+          "enclosing": "round"
+        },
+        "outcome": "caught",
+        "durationMs": 2714,
+        "testedWith": [
+          "<full suite>"
+        ]
+      }
+    ],
+    "suppressed": [],
+    "timing": {
+      "sandboxMs": 54,
+      "baselineMs": 8022,
+      "executionMs": 7905,
+      "fullSuiteMs": 0,
+      "totalMs": 16013
+    },
+    "counts": {
+      "generated": 33,
+      "deduplicated": 3,
+      "executed": 3,
+      "caught": 2,
+      "unverified": 1,
+      "caughtElsewhere": 0
+    }
+  }
+}

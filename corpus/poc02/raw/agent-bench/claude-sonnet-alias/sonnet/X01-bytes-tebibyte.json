@@ -1,0 +1,29 @@
+{
+  "taskId": "X01-bytes-tebibyte",
+  "repo": "bytes",
+  "sourceCommit": "9ddc13b6c66e0cb293616fba246e05db4b6cef4d",
+  "origin": "https://github.com/visionmedia/bytes.js",
+  "runner": "mocha",
+  "category": "feature",
+  "prior": "uncertain",
+  "priorReason": "Additive and pattern-following. The interesting question is whether the agent tests the threshold at which formatting switches from TB to PB.",
+  "prompt": "Please add support for pebibytes to this library, so that bytes('1pb') parses and bytes(1125899906842624) formats as '1PB'. Follow the existing pattern for the other units and update the tests.",
+  "agent": {
+    "name": "claude-code",
+    "version": "2.1.88 (Claude Code)",
+    "model": "sonnet"
+  },
+  "retryReason": "model-id-unavailable",
+  "diff": "",
+  "changedFiles": [],
+  "changedTestFiles": [],
+  "changedProductionFiles": [],
+  "testsPass": true,
+  "testSummary": "30 passing",
+  "agentExitCode": 1,
+  "agentDurationMs": 5226,
+  "agentTail": "API Error: 402 {\"detail\":{\"code\":402,\"message\":\"insufficient_quota - You have exceeded your credit quota for this month\"}}\n",
+  "staticFindings": [],
+  "outcome": "agent-failed",
+  "interventions": []
+}

@@ -1,0 +1,135 @@
+﻿node : T01-order-wide-volume-discount: verifying??  17 -> 1 -> 1 executed, 0 unverifie
+d, 0 elsewhere, 5s
+위치 줄:1 문자:1
++ node --experimental-strip-types scripts/agent-verify.ts 2>&1 | Out-Fi ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (T01-order-wide-...0 elsewhere, 5s:String 
+   ) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+T02-empty-collection-link-header: verifying??  14 -> 1 -> 1 executed, 0 unverified, 0 
+elsewhere, 3s
+T04-equal-jitter-backoff: verifying??  21 -> 3 -> 3 executed, 0 unverified, 0 elsewher
+e, 7s
+T05-webhook-scheme-rejection: verifying??  16 -> 1 -> 1 executed, 1 unverified, 0 else
+where, 5s
+T06-more-postal-code-countries: verifying??  0 -> 0 -> 0 executed, 0 unverified, 0 els
+ewhere, 0s
+T07-bankers-rounding: verifying??  13 -> 6 -> 6 executed, 1 unverified, 0 elsewhere, 1
+7s
+T08-cancel-paid-order: verifying??  0 -> 0 -> 0 executed, 0 unverified, 0 elsewhere, 0
+s
+T09-reject-nonpositive-reservation: verifying??  8 -> 3 -> 3 executed, 1 unverified, 0
+ elsewhere, 14s
+T10-tax-on-order-total: verifying??  16 -> 1 -> 1 executed, 0 unverified, 0 elsewhere,
+ 4s
+T11-idempotency-inflight-dedup: verifying??  14 -> 1 -> 1 executed, 0 unverified, 0 el
+sewhere, 4s
+T12-case-insensitive-sku-tax: verifying??  0 -> 0 -> 0 executed, 0 unverified, 0 elsew
+here, 0s
+T13-money-format-thousands: verifying??  0 -> 0 -> 0 executed, 0 unverified, 0 elsewhe
+re, 0s
+T14-gb-postcode-no-space: verifying??  7 -> 5 -> 5 executed, 1 unverified, 0 elsewhere
+, 12s
+T15-webhook-replay-protection: verifying??  17 -> 2 -> 2 executed, 1 unverified, 0 els
+ewhere, 7s
+T16-extract-tax-module: verifying??  17 -> 3 -> 3 executed, 0 unverified, 0 elsewhere,
+ 7s
+T17-money-allocate: verifying??  24 -> 16 -> 12 executed, 2 unverified, 0 elsewhere, 2
+5s
+T18-atomic-reserve-many: verifying??  7 -> 2 -> 2 executed, 2 unverified, 0 elsewhere,
+ 9s
+T19-expire-stale-orders: verifying??  10 -> 9 -> 9 executed, 0 unverified, 0 elsewhere
+, 17s
+T20-pagination-reject-bad-page: verifying??  19 -> 6 -> 6 executed, 1 unverified, 0 el
+sewhere, 14s
+T22-retry-more-statuses: verifying??  25 -> 12 -> 12 executed, 2 unverified, 0 elsewhe
+re, 26s
+T23-inventory-rename-field: verifying??  5 -> 1 -> 1 executed, 0 unverified, 0 elsewhe
+re, 3s
+T24-order-history-immutability: verifying??  0 -> 0 -> 0 executed, 0 unverified, 0 els
+ewhere, 0s
+
+POC-02 changed-behaviour verification ??main arm
+============================================================================================================
+task                                gen   dedup  exec  caught  UNVER  elsew  sec
+------------------------------------------------------------------------------------------------------------
+T01-order-wide-volume-discount      17    1      1     1       0      0      5
+T02-empty-collection-link-header    14    1      1     1       0      0      3
+T04-equal-jitter-backoff            21    3      3     3       0      0      7
+T05-webhook-scheme-rejection        16    1      1     0       1      0      5
+T06-more-postal-code-countries      0     0      0     0       0      0      0
+T07-bankers-rounding                13    6      6     5       1      0      17
+T08-cancel-paid-order               0     0      0     0       0      0      0
+T09-reject-nonpositive-reservation  8     3      3     2       1      0      14
+T10-tax-on-order-total              16    1      1     1       0      0      4
+T11-idempotency-inflight-dedup      14    1      1     1       0      0      4
+T12-case-insensitive-sku-tax        0     0      0     0       0      0      0
+T13-money-format-thousands          0     0      0     0       0      0      0
+T14-gb-postcode-no-space            7     5      5     4       1      0      12
+T15-webhook-replay-protection       17    2      2     1       1      0      7
+T16-extract-tax-module              17    3      3     3       0      0      7
+T17-money-allocate                  24    16     12    10      2      0      25
+T18-atomic-reserve-many             7     2      2     0       2      0      9
+T19-expire-stale-orders             10    9      9     9       0      0      17
+T20-pagination-reject-bad-page      19    6      6     5       1      0      14
+T22-retry-more-statuses             25    12     12    10      2      0      26
+T23-inventory-rename-field          5     1      1     1       0      0      3
+T24-order-history-immutability      0     0      0     0       0      0      0
+------------------------------------------------------------------------------------------------------------
+TOTAL                               250   73     69    57      12     0      180
+
+  tasks                              22
+  tasks with an unverified behaviour 9
+  tasks with a linking miss only     0
+  generation reduced by dedup        250 -> 73 (71% fewer)
+  mean wall time per task            8.2s
+
+Findings
+------------------------------------------------------------------------------------------------------------
+  T05-webhook-scheme-rejection
+    [UNVERIFIED] low    src/webhooks.ts:12  === -> !==
+             unconstrained: any input where `part.trim().split("=")[0] === scheme` currently decides the outcome
+             code: part.trim().split("=")[0] === scheme
+  T07-bankers-rounding
+    [UNVERIFIED] medium src/money.ts:63  + -> -
+             unconstrained: an input that reaches `lower + 1`, i.e. one satisfying `fraction > 0.5`
+             code: lower + 1
+  T09-reject-nonpositive-reservation
+    [UNVERIFIED] high   src/inventory.ts:34  0 -> 1
+             unconstrained: quantity = 1
+             code: quantity <= 0
+  T14-gb-postcode-no-space
+    [UNVERIFIED] high   src/address.ts:27  > -> >=
+             unconstrained: withoutSpaces.length = 3
+             code: withoutSpaces.length > 3
+  T15-webhook-replay-protection
+    [UNVERIFIED] high   src/webhooks.ts:40  > -> >=
+             unconstrained: now - timestamp exactly equal to TOLERANCE_SECONDS
+             code: now - timestamp > TOLERANCE_SECONDS
+  T17-money-allocate
+    [UNVERIFIED] high   src/money.ts:49  < -> <=
+             unconstrained: amount.cents = 0
+             code: amount.cents < 0
+    [UNVERIFIED] high   src/money.ts:37  0 -> 1
+             unconstrained: ratios.length = 0
+             code: ratios.length === 0
+  T18-atomic-reserve-many
+    [UNVERIFIED] high   src/inventory.ts:61  > -> >=
+             unconstrained: item.quantity exactly equal to avail
+             code: item.quantity > avail
+    [UNVERIFIED] medium src/inventory.ts:64  - -> +
+             unconstrained: any input that reaches `avail - item.quantity`
+             code: avail - item.quantity
+  T20-pagination-reject-bad-page
+    [UNVERIFIED] high   src/pagination.ts:25  < -> <=
+             unconstrained: raw.size = 1
+             code: raw.size < 1
+  T22-retry-more-statuses
+    [UNVERIFIED] high   src/retry.ts:30  < -> <=
+             unconstrained: status = 600
+             code: status < 600
+    [UNVERIFIED] high   src/retry.ts:30  500 -> 499
+             unconstrained: status = 499
+             code: status >= 500
+

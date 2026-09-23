@@ -1,0 +1,54 @@
+﻿node : ms: 14 candidate commits
+위치 줄:1 문자:1
++ node --experimental-strip-types scripts/external-history.ts work/ext/ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ms: 14 candidate commits:String) [], Rem 
+   oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  1/14 5e40ced4 baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | adds week format to fmtShort and fmtLong (#2
+  2/14 3ba274e0 6 exec, 1 unverified, 20s  | add support for months (#251)
+  3/14 94c9dfcc baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | 100% test coverage (#245)
+  4/14 3fc7f41c baseline unavailable: no behavioural alternatives on the changed lines
+  | breaking change!: move `ms` to a named expor
+  5/14 f9580630 2 exec, 0 unverified, 6s  | breaking change!: drop support for IE and 
+fi
+  6/14 f150c1cf baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | feat: add `parse()` and `format()` exports (
+  7/14 a18d9dec baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | Migrate to `@vercel/style-guide` (#183)
+  8/14 bf543051 baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | Add TypeScript and ESM support. (#163)
+  9/14 ee91f307 baseline unavailable: baseline is red (exit 1); survivors would be mea
+ningless  | More suitable name for file containing tests
+  10/14 0337daa5 baseline unavailable: no behavioural alternatives on the changed line
+s  | Add time abbreviations, updated tests and re
+  11/14 04b1c396 baseline unavailable: no behavioural alternatives on the changed line
+s  | add failing tests for singular representatio
+  12/14 8263f199 baseline unavailable: baseline is red (exit 1); survivors would be me
+aningless  | add short formatting as default and .long op
+  13/14 577f53a2 baseline unavailable: baseline is red (exit 1); survivors would be me
+aningless  | add rounding to fix crazy decimals
+  14/14 a9b5bc2c baseline unavailable: baseline is red (exit 1); survivors would be me
+aningless  | Make ms.js useable as a component
+
+External history verification ??ms
+================================================================================================
+  candidate commits            14
+  analysed                     14
+  verification available       2
+  baseline red / unavailable   12
+  commits with unverified beh. 1  (50%)
+  alternatives generated       75
+  after dedup                  8
+  executed                     8
+  unverified findings          1
+  mean wall time               12.8s
+
+  3ba274e01  add support for months (#251)
+     [high] src/index.ts:165  >= -> >
+         code: msAbs >= y
+         unconstrained: msAbs exactly equal to y
+

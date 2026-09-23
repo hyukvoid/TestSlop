@@ -1,0 +1,40 @@
+{
+  "experiment": "E24 full-suite baseline fallback replay",
+  "taskId": "X05-ms-rounding",
+  "repo": "ms",
+  "origin": "https://github.com/vercel/ms",
+  "sourceCommit": "4ff48cec099f0514c3e9bbca18706c9c21122bfb",
+  "agent": {
+    "name": "codex-cli",
+    "version": "codex-cli 0.155.1",
+    "model": "gpt-6-sol"
+  },
+  "rawRecord": "work/extbench-results-codex/gpt-6-sol/X05-ms-rounding.json",
+  "diffSha256": "c557c4a7d645bbe875d491e3c49f2aaca0248626466ca25e449b1f6e6b9cea13",
+  "diffMatchesRawRecord": true,
+  "verification": {
+    "baseline": {
+      "ok": false,
+      "detail": "baseline is red (exit 1); survivors would be meaningless",
+      "durationMs": 3611
+    },
+    "testCommand": "npx jest --ci --silent",
+    "results": [],
+    "suppressed": [],
+    "timing": {
+      "sandboxMs": 67,
+      "baselineMs": 3611,
+      "executionMs": 0,
+      "fullSuiteMs": 0,
+      "totalMs": 3744
+    },
+    "counts": {
+      "generated": 39,
+      "deduplicated": 2,
+      "executed": 0,
+      "caught": 0,
+      "unverified": 0,
+      "caughtElsewhere": 0
+    }
+  }
+}

@@ -1,0 +1,120 @@
+﻿node : qs: 18 candidate commits
+위치 줄:1 문자:1
++ node --experimental-strip-types scripts/external-history.ts work/ext/ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (qs: 18 candidate commits:String) [], Rem 
+   oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  1/18 0d415f34 2 exec, 1 unverified, 5s  | [Fix] `utils`: `merge`: seed an overflow c
+on
+  2/18 4a310b47 7 exec, 2 unverified, 11s  | [Robustness] `utils`: `merge`: apply `arr
+ayL
+  3/18 fc373c91 10 exec, 2 unverified, 15s  | [Fix] `utils`: `merge`: keep a `strictMe
+rge`
+  4/18 25257d94 7 exec, 1 unverified, 11s  | [Fix] `parse`: only treat `[]` as array s
+ynt
+  5/18 62fd2548 1 exec, 0 unverified, 2s  | [Fix] stringify: serialize Date values whe
+n 
+  6/18 8859c374 1 exec, 1 unverified, 4s  | [Fix] `parse`: enforce `arrayLimit` on com
+ma
+  7/18 d56f48ca 1 exec, 0 unverified, 3s  | [Fix] `parse`: flatten a collection append
+ed
+  8/18 e83d321f 3 exec, 0 unverified, 5s  | [Fix] `utils`: `isBuffer`: do not invoke a
+ n
+  9/18 b433a9b1 5 exec, 0 unverified, 7s  | [Fix] `stringify`: do not let `allowEmptyA
+rr
+  10/18 f3dc5b02 4 exec, 0 unverified, 5s  | [New] `stringify`: add a `depth` option t
+o b
+  11/18 708faded baseline unavailable: no behavioural alternatives on the changed line
+s  | [Fix] `stringify`: encode dots in a top-leve
+  12/18 74a0f6a8 8 exec, 1 unverified, 11s  | [Robustness] `utils`: enforce `arrayLimi
+t` c
+  13/18 5d5f723a 5 exec, 1 unverified, 8s  | [Perf] `utils`: make `compact` O(n) via a
+ si
+  14/18 52afe00a 10 exec, 2 unverified, 14s  | [Robustness] `parse`: throw the `arrayL
+imit`
+  15/18 963e538c 2 exec, 2 unverified, 5s  | [Fix] `parse`: enforce `throwOnLimitExcee
+ded
+  16/18 95329696 4 exec, 4 unverified, 10s  | [Robustness] `utils.merge` / `utils.assi
+gn`:
+  17/18 21f80b33 1 exec, 0 unverified, 2s  | [Fix] `stringify`: skip null/undefined en
+tri
+  18/18 a0a81ea2 baseline unavailable: no behavioural alternatives on the changed line
+s  | [Fix] `stringify`: use configured `delimiter
+
+External history verification ??qs
+================================================================================================
+  candidate commits            18
+  analysed                     18
+  verification available       16
+  baseline red / unavailable   2
+  commits with unverified beh. 10  (63%)
+  alternatives generated       2534
+  after dedup                  74
+  executed                     71
+  unverified findings          17
+  mean wall time               7.4s
+
+  0d415f34f  [Fix] `utils`: `merge`: seed an overflow container's index from its ow
+     [medium] lib/utils.js:105  && -> ||
+         code: String(num) === keys[i] && num > max
+         unconstrained: an input where `String(num) === keys[i]` and `num > max` disagree
+  4a310b47a  [Robustness] `utils`: `merge`: apply `arrayLimit` to the two-element a
+     [medium] lib/utils.js:106  1 -> 2
+         code: markOverflow(arrayToObject(pair, options), 1)
+         unconstrained: an input that reaches `markOverflow(arrayToObject(pair, options), 1)`, i.e. 
+     [medium] lib/utils.js:146  1 -> 2
+         code: markConflict(conflict, 1)
+         unconstrained: an input that reaches `markConflict(conflict, 1)`, i.e. one satisfying `isAr
+  fc373c911  [Fix] `utils`: `merge`: keep a `strictMerge` conflict container's inde
+     [high] lib/utils.js:222  > -> >=
+         code: conflictKey > getConflictIndex(acc)
+         unconstrained: conflictKey exactly equal to getConflictIndex(acc)
+     [medium] lib/utils.js:222  && -> ||
+         code: String(conflictKey) === key && conflictKey > getConflictIndex(acc)
+         unconstrained: an input where `String(conflictKey) === key` and `conflictKey > getConflictI
+  25257d943  [Fix] `parse`: only treat `[]` as array syntax when it ends the key
+     [high] lib/parse.js:116  > -> >=
+         code: pos > 1
+         unconstrained: pos = 1
+  8859c3747  [Fix] `parse`: enforce `arrayLimit` on comma groups under `[]=` when `
+     [medium] lib/parse.js:128  0 -> 1
+         code: isArray(obj[key]) ? obj[key].length : 0
+         unconstrained: an input that reaches `isArray(obj[key]) ? obj[key].length : 0`, i.e. one sa
+  74a0f6a83  [Robustness] `utils`: enforce `arrayLimit` consistently across `merge`
+     [medium] lib/utils.js:165  - -> +
+         code: target.length - 1
+         unconstrained: an input that reaches `target.length - 1`, i.e. one satisfying `options && t
+  5d5f723af  [Perf] `utils`: make `compact` O(n) via a side-channel visited-set ins
+     [medium] lib/utils.js:307  true -> false
+         code: refs.set(val, true)
+         unconstrained: any input that reaches the `true` in `refs.set(val, true)`
+  52afe00ab  [Robustness] `parse`: throw the `arrayLimit` error before splitting ov
+     [high] lib/parse.js:46  >= -> >
+         code: commaCount >= options.arrayLimit
+         unconstrained: commaCount exactly equal to options.arrayLimit
+     [medium] lib/parse.js:128  0 -> 1
+         code: isArray(obj[key]) ? obj[key].length : 0
+         unconstrained: an input that reaches `isArray(obj[key]) ? obj[key].length : 0`, i.e. one sa
+  963e538c7  [Fix] `parse`: enforce `throwOnLimitExceeded` for cumulative array gro
+     [high] lib/utils.js:94  1 -> 2
+         code: options.arrayLimit === 1
+         unconstrained: options.arrayLimit = 1
+     [high] lib/utils.js:333  1 -> 2
+         code: arrayLimit === 1
+         unconstrained: arrayLimit = 1
+  953296963  [Robustness] `utils.merge` / `utils.assign`: avoid invoking `__proto__
+     [medium] lib/utils.js:71  && -> ||
+         code: key === '__proto__' && defineProperty
+         unconstrained: an input where `key === '__proto__'` and `defineProperty` disagree
+     [medium] lib/utils.js:73  true -> false
+         code: configurable: true
+         unconstrained: any input that reaches the `true` in `configurable: true`
+     [medium] lib/utils.js:74  true -> false
+         code: enumerable: true
+         unconstrained: any input that reaches the `true` in `enumerable: true`
+     [medium] lib/utils.js:76  true -> false
+         code: writable: true
+         unconstrained: any input that reaches the `true` in `writable: true`
+

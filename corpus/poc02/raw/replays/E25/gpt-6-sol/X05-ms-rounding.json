@@ -1,0 +1,91 @@
+{
+  "experiment": "E25 nested dependency junction replay",
+  "taskId": "X05-ms-rounding",
+  "repo": "ms",
+  "origin": "https://github.com/vercel/ms",
+  "sourceCommit": "4ff48cec099f0514c3e9bbca18706c9c21122bfb",
+  "agent": {
+    "name": "codex-cli",
+    "version": "codex-cli 0.155.1",
+    "model": "gpt-6-sol"
+  },
+  "rawRecord": "work/extbench-results-codex/gpt-6-sol/X05-ms-rounding.json",
+  "diffSha256": "c557c4a7d645bbe875d491e3c49f2aaca0248626466ca25e449b1f6e6b9cea13",
+  "diffMatchesRawRecord": true,
+  "verification": {
+    "baseline": {
+      "ok": true,
+      "detail": "baseline green",
+      "durationMs": 4713
+    },
+    "testCommand": "npx jest --ci --silent",
+    "results": [
+      {
+        "alternative": {
+          "file": "src/index.ts",
+          "line": 238,
+          "start": 5988,
+          "end": 5989,
+          "original": ">",
+          "replacement": ">=",
+          "context": "Math.abs(value) > 1",
+          "kind": "boundary",
+          "confidence": "high",
+          "distinguishing": {
+            "description": "Math.abs(value) = 1",
+            "key": "src/index.ts|Math.abs(value)|eq|1",
+            "subject": "Math.abs(value)",
+            "value": "1"
+          },
+          "priority": 0,
+          "enclosing": "plural"
+        },
+        "outcome": "caught",
+        "durationMs": 2568,
+        "testedWith": [
+          "<full suite>"
+        ]
+      },
+      {
+        "alternative": {
+          "file": "src/index.ts",
+          "line": 237,
+          "start": 5937,
+          "end": 5938,
+          "original": "/",
+          "replacement": "*",
+          "context": "ms / n",
+          "kind": "arithmetic",
+          "confidence": "medium",
+          "distinguishing": {
+            "description": "any input that reaches `ms / n`",
+            "key": "src/index.ts|ms/n|value"
+          },
+          "priority": 2,
+          "enclosing": "plural"
+        },
+        "outcome": "caught",
+        "durationMs": 2573,
+        "testedWith": [
+          "<full suite>"
+        ]
+      }
+    ],
+    "suppressed": [],
+    "timing": {
+      "sandboxMs": 57,
+      "baselineMs": 4713,
+      "executionMs": 5141,
+      "fullSuiteMs": 0,
+      "totalMs": 9973
+    },
+    "counts": {
+      "generated": 39,
+      "deduplicated": 2,
+      "executed": 2,
+      "caught": 2,
+      "unverified": 0,
+      "caughtElsewhere": 0
+    }
+  }
+}

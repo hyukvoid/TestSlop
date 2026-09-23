@@ -15,7 +15,7 @@
  * machine from the test suite.
  */
 
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -47,6 +47,20 @@ const SKIP = new Set([
 ]);
 
 export interface SandboxOptions {
+  /**
+   * Where to find the dependency tree to link, when it does not live at
+   * `<repoRoot>/node_modules`.
+   *
+   * Added after a destructive harness bug. The external-history benchmark checked each
+   * commit out into a git worktree and put a `node_modules` junction inside it so the
+   * sandbox could find one. `git worktree remove --force` then deleted *through* that
+   * junction and emptied the real repository's `node_modules` — verified directly: after
+   * the call the link target's files were gone while the directory remained. Every
+   * baseline after the first commit was red, and the harness reported that as a property
+   * of the repository. Pointing the sandbox at the dependency tree removes the need to
+   * ever place a link inside a directory something else will delete.
+   */
+  modulesFrom?: string;
   /**
    * Reuse a stable per-repository scratch directory so the test runner's transform
    * cache survives between verifications. Default true. Set false for isolation in
@@ -89,9 +103,24 @@ export async function createSandbox(repoRoot: string, opts: SandboxOptions = {})
 
   const skip = new Set([...SKIP, ...(opts.skip ?? [])]);
   const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(repoRoot, { withFileTypes: true });
 
-  for (const entry of entries) {
+  // Clear the previous source tree before copying, keeping only the linked dependency
+  // directory.
+  //
+  // Copying with `force` overwrites files that exist in both revisions but leaves behind
+  // files the new revision does not have. That produced a real, silent wrong answer: the
+  // external-history harness reuses one worktree path for every commit it checks out, so
+  // a stale test file from the previous commit stayed in the sandbox and kept killing
+  // mutants. The same 18 commits reported 2 unverified behaviours on one run and 0 on the
+  // next. A tool whose zero cannot be trusted is worse than no tool.
+  if (reuse) {
+    for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+      if (entry.name === "node_modules") continue;
+      await rm(path.join(root, entry.name), { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
+    }
+  }
+
+  for (const entry of await readdir(repoRoot, { withFileTypes: true })) {
     if (skip.has(entry.name)) continue;
     const from = path.join(repoRoot, entry.name);
     const to = path.join(root, entry.name);
@@ -102,12 +131,16 @@ export async function createSandbox(repoRoot: string, opts: SandboxOptions = {})
 
   // Link the dependency tree. A copy of node_modules would dominate the runtime and
   // defeat the point of doing this per scan.
-  const modules = path.join(repoRoot, "node_modules");
-  if (existsSync(modules)) {
-    await symlink(modules, path.join(root, "node_modules"), "junction").catch(async () => {
+  const modules = opts.modulesFrom ?? path.join(repoRoot, "node_modules");
+  const resolvedModules = existsSync(modules) ? await realpath(modules).catch(() => modules) : modules;
+  if (existsSync(resolvedModules)) {
+    // Resolve nested junctions first. A second junction to a worktree's node_modules
+    // junction can fail silently on Windows, leaving the scratch sandbox without tests'
+    // dependencies even though the analyzed repo itself can run them.
+    await symlink(resolvedModules, path.join(root, "node_modules"), "junction").catch(async () => {
       // Some filesystems refuse junctions; fall back to a copy so verification still
       // works, and accept the cost.
-      await cp(modules, path.join(root, "node_modules"), { recursive: true }).catch(() => {});
+      await cp(resolvedModules, path.join(root, "node_modules"), { recursive: true }).catch(() => {});
     });
   }
 

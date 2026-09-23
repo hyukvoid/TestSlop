@@ -17,11 +17,17 @@ const TEST_DIR = /(^|\/)(__tests__|tests?|spec|e2e)(\/|$)/i;
 const PY_TEST_PATH = /(^|\/)(test_[^/]+\.py|[^/]+_test\.py)$/i;
 const ANALYSABLE = /\.(ts|tsx|js|jsx|mjs|cjs|py)$/i;
 const DECLARATION = /\.d\.ts$/i;
+// `tsd` type tests: `index.test-d.ts`. Never executed by the test runner, so mutating
+// them changes nothing a test can observe. Found on `camelcase` 552b7f1d, where the file
+// fell through to "production" — `.test-d.ts` does not match a `.test.` infix — and
+// produced two findings about mutating type assertions.
+const TYPE_TEST = /\.test-d\.tsx?$/i;
 const FIXTURE_PATH = /(^|\/)(fixtures?|__mocks__|__fixtures__|snapshots?|__snapshots__)(\/|$)/i;
 
 export function classifyPath(path: string): FileRole {
   if (!ANALYSABLE.test(path)) return "other";
   if (DECLARATION.test(path)) return "other";
+  if (TYPE_TEST.test(path)) return "other";
   if (FIXTURE_PATH.test(path)) return "other";
   if (TEST_PATH.test(path) || PY_TEST_PATH.test(path)) return "test";
 

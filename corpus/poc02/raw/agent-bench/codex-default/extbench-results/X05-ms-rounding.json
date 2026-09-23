@@ -1,0 +1,27 @@
+{
+  "taskId": "X05-ms-rounding",
+  "repo": "ms",
+  "origin": "https://github.com/vercel/ms",
+  "runner": "jest",
+  "category": "behaviour-change",
+  "prior": "expect-risk",
+  "priorReason": "Rounding and pluralisation interact at exactly the values a test suite tends to skip: 1.0, 1.5, and just under 2.",
+  "prompt": "The long format rounds so that 1.5 days prints as '2 days', which surprises people reading logs. Please change the long format to truncate rather than round, so 1.5 days prints as '1 day'. Keep the short format as it is, and update the tests.",
+  "agent": {
+    "name": "codex-cli",
+    "version": "codex-cli 0.155.1",
+    "model": "gpt-5.6-luna (config default)"
+  },
+  "diff": "",
+  "changedFiles": [],
+  "changedTestFiles": [],
+  "changedProductionFiles": [],
+  "testsPass": true,
+  "testSummary": "167 passed, 167 total",
+  "agentExitCode": 1,
+  "agentDurationMs": 9898,
+  "agentTail": "Reading additional input from stdin...\nOpenAI Codex v0.155.1\n--------\nworkdir: <REPO_HOME>\\work\\extbench\\X05-ms-rounding\nmodel: gpt-5.6-luna\nprovider: openai\napproval: never\nsandbox: danger-full-access\nreasoning effort: max\nreasoning summaries: none\nsession id: 01a0cc13-3c05-7271-89e0-05ede0aa2d38\n--------\nuser\nThe long format rounds so that 1.5 days prints as '2 days', which surprises people reading logs. Please change the long format to truncate rather than round, so 1.5 days prints as '1 day'. Keep the short format as it is, and update the tests.\nhook: SessionStart\nhook: SessionStart Failed\nERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:44 PM.\nERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:44 PM.\n",
+  "staticFindings": [],
+  "outcome": "agent-failed",
+  "interventions": []
+}

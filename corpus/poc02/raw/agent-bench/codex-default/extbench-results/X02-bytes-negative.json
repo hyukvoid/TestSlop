@@ -1,0 +1,27 @@
+{
+  "taskId": "X02-bytes-negative",
+  "repo": "bytes",
+  "origin": "https://github.com/visionmedia/bytes.js",
+  "runner": "mocha",
+  "category": "bug-fix",
+  "prior": "expect-risk",
+  "priorReason": "Sign handling has obvious boundaries at zero and at the smallest magnitude. A fix that only tests '-1KB' would leave several unconstrained.",
+  "prompt": "Bug report: bytes.format(-1024) returns '-1KB' but bytes.parse('-1KB') returns null, so a formatted value cannot be round-tripped. Please make parse accept a leading minus sign and update the tests.",
+  "agent": {
+    "name": "codex-cli",
+    "version": "codex-cli 0.155.1",
+    "model": "gpt-5.6-luna (config default)"
+  },
+  "diff": "",
+  "changedFiles": [],
+  "changedTestFiles": [],
+  "changedProductionFiles": [],
+  "testsPass": true,
+  "testSummary": "30 passing",
+  "agentExitCode": 1,
+  "agentDurationMs": 10328,
+  "agentTail": "Reading additional input from stdin...\nOpenAI Codex v0.155.1\n--------\nworkdir: <REPO_HOME>\\work\\extbench\\X02-bytes-negative\nmodel: gpt-5.6-luna\nprovider: openai\napproval: never\nsandbox: danger-full-access\nreasoning effort: max\nreasoning summaries: none\nsession id: 01a0cc12-8533-7462-b706-8279abce2a23\n--------\nuser\nBug report: bytes.format(-1024) returns '-1KB' but bytes.parse('-1KB') returns null, so a formatted value cannot be round-tripped. Please make parse accept a leading minus sign and update the tests.\nhook: SessionStart\nhook: SessionStart Failed\nERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:44 PM.\nERROR: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:44 PM.\n",
+  "staticFindings": [],
+  "outcome": "agent-failed",
+  "interventions": []
+}

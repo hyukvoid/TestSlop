@@ -1,0 +1,28 @@
+{
+  "taskId": "X05-ms-rounding",
+  "repo": "ms",
+  "sourceCommit": "4ff48cec099f0514c3e9bbca18706c9c21122bfb",
+  "origin": "https://github.com/vercel/ms",
+  "runner": "jest",
+  "category": "behaviour-change",
+  "prior": "expect-risk",
+  "priorReason": "Rounding and pluralisation interact at exactly the values a test suite tends to skip: 1.0, 1.5, and just under 2.",
+  "prompt": "The long format rounds so that 1.5 days prints as '2 days', which surprises people reading logs. Please change the long format to truncate rather than round, so 1.5 days prints as '1 day'. Keep the short format as it is, and update the tests.",
+  "agent": {
+    "name": "claude-code",
+    "version": "2.1.88 (Claude Code)",
+    "model": "claude-sonnet-4-6"
+  },
+  "diff": "",
+  "changedFiles": [],
+  "changedTestFiles": [],
+  "changedProductionFiles": [],
+  "testsPass": true,
+  "testSummary": "167 passed, 167 total",
+  "agentExitCode": 1,
+  "agentDurationMs": 8253,
+  "agentTail": "There's an issue with the selected model (claude-sonnet-4-6). It may not exist or you may not have access to it. Run --model to pick a different model.\n",
+  "staticFindings": [],
+  "outcome": "agent-failed",
+  "interventions": []
+}
