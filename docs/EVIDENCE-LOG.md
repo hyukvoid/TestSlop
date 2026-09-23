@@ -326,3 +326,97 @@ missed entirely.
 **Decision.** This is the strongest single piece of evidence for what the product
 should be: the value is concentrated in the findings an agent reviewing its own work
 does *not* reach, not in the ones it would fix anyway.
+
+---
+
+# POC-02
+
+Starting commit: `894e31ed2960f0aa89070fedd2dda1ca5292ef54` (POC-01 final).
+
+## E11 — Second agent, again unavailable
+
+**Goal B** asked for a genuinely independent second agent.
+
+| candidate | result |
+| --- | --- |
+| Claude Code 2.1.88 | still `API Error: 402 insufficient_quota`, unchanged from POC-01 |
+| `codex -m gpt-5.1-codex` | `The 'gpt-5.1-codex' model is not supported when using Codex with a ChatGPT account` |
+| `codex -m gpt-5.1-codex-max` | same rejection |
+| `codex -m gpt-5-codex`, `o4-mini` | same rejection |
+| gemini, aider, opencode, cursor-agent, copilot, crush, goose | not installed |
+
+No API keys are present in the environment, so no candidate can be revived by
+supplying credentials. `gpt-5.6-luna` is the only model reachable.
+
+**Decision.** Follow the brief's fallback: document the constraint and **increase
+repository diversity instead**. POC-02's external-repository work therefore carries the
+weight that a second agent would have carried, and *agent generalisation remains
+unestablished across two consecutive phases*. This is stated in the report as a
+standing limitation, not a footnote.
+
+Changing reasoning effort was considered as a within-model arm and rejected: it is a
+different operating point of the same model, not an independent agent, and presenting it
+as diversity would be exactly the fabrication the brief warns against.
+
+---
+
+## E12 — Equivalent-mutant taxonomy, built from the actual survivors
+
+**Hypothesis.** POC-01's "~26% equivalent mutants" is one problem with one fix.
+
+**Experiment.** Re-examined all 19 surviving mutants against the real source, one at a
+time, and recorded a category plus the required fix for each
+(`corpus/equivalence-taxonomy.ts`).
+
+**Result.** It is six problems with four different fixes, and only two of nineteen are
+equivalent in the strict sense.
+
+| category | n | share | fix |
+| --- | --- | --- | --- |
+| untested-input-class — the product working | 8 | 42% | keep |
+| **redundant** — one gap, several edits | **4** | **21%** | group by distinguishing input |
+| out-of-domain-input | 2 | 11% | reachability of the distinguishing input |
+| **provably-equivalent** | **2** | **11%** | differential execution |
+| oblique — real but unrecognisable to a developer | 2 | 11% | better mutation targeting |
+| out-of-contract-observation | 1 | 5% | observability analysis |
+
+Two corrections to POC-01's own classification, found during this pass:
+
+- T10's `money(0)` → `money(1)` was called equivalent. It is not: it differs at many
+  inputs, just not the tested ones. It is **oblique** — a real gap expressed in a way no
+  developer would recognise.
+- T07's three survivors were counted as three findings. They are **one** missing input
+  class reached by three different edits.
+
+**Decision.** The strict equivalence rate is **11%, not 26%**, and the largest fixable
+category is redundancy, which is a grouping problem. Attack in order of measured size:
+grouping first, targeting second, reachability third. Differential execution is deferred
+unless the 11% proves to matter after the first two.
+
+---
+
+## E13 — Distinguishing inputs as the organising idea
+
+**Hypothesis.** Computing the input on which original and alternative disagree solves
+the grouping problem *and* the reporting problem at once.
+
+**Reasoning.** `size < 2` and `size <= 1` are the same predicate. Any scheme that keys
+findings on the *edit* reports them twice; a scheme that keys on the *distinguishing
+input* cannot. And the same value is what a developer needs to read: "size = 1 is not
+constrained" rather than "constant 1 mutated to 2".
+
+**Design.** `src/mutation/behaviour.ts` generates at most two probes per comparison:
+
+- **at the threshold** — relax the operator; distinguishes `lhs = k`
+- **past the threshold** — shift the literal outward; distinguishes `lhs = k ± 1`
+
+plus lower-confidence probes for logic, arithmetic and standalone constants. Oblique
+sites (`reduce()` seeds, `??` fallbacks) are excluded by construction, and array indices
+are skipped because mutating them produces crashes rather than behaviour changes.
+Equality against a literal shifts the literal rather than flipping the sense, because
+`=== → !==` differs for every input and cannot be named.
+
+**A consequence worth stating.** Naming the input makes a false positive cheap. A
+developer reading `status = 600` dismisses it in one second without needing the tool to
+have proved anything. POC-01 spent its effort trying to prove equivalence; POC-02 spends
+it on making proof unnecessary for triage.

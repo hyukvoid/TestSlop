@@ -14,17 +14,18 @@ import { GitError, listFilesAtRef } from "./core/git.ts";
 import { ALL_RULES, excludeRules, rulesByIds } from "./rules/index.ts";
 import { renderReport, renderRuleList } from "./report/human.ts";
 import { toJsonReport } from "./report/json.ts";
-import { runMutationVerification } from "./mutation/verify.ts";
+import { verifyChangedBehaviour, behaviourFindings } from "./mutation/behaviour-verify.ts";
 import type { Finding } from "./core/types.ts";
 
 const VERSION = "0.0.0-poc.0";
 
 const USAGE = `
 TestSlop ${VERSION}
-Your coding agent made the tests green. Check what changed to get there.
+Tests passed. Now break the code and see if they notice.
 
 Usage
-  testslop scan [options]
+  testslop verify [options]   Break the changed behaviour and check the tests catch it
+  testslop scan [options]     Fast static-only analysis of the test diff
   testslop rules
   testslop --help
 
@@ -35,11 +36,14 @@ Options
   --staged             Compare the index instead of the working tree.
   --cwd <path>         Repository to analyse. Default: current directory.
   --json               Emit the machine-readable report on stdout.
-  --mutate             Run targeted mutation on changed production lines to
-                       gather behavioural evidence. Slower; see --mutate-budget.
-  --mutate-budget <n>  Max mutants to run. Default: 12
-  --test-command <cmd> Command used to run tests during mutation.
+  --budget <n>         Max behavioural alternatives to execute. Default: 12
+  --stop-after <n>     Stop once this many unverified behaviours are found.
+                       Default: 4
+  --no-link-check      Skip the full-suite run that distinguishes "nothing
+                       verifies this" from "the linked tests were too narrow".
+  --test-command <cmd> Command used to run tests during verification.
                        Default: auto-detected from package.json
+  --mutate             Deprecated alias for running verification inside \`scan\`.
   --rule <id>          Only run these rules. Repeatable.
   --skip-rule <id>     Skip these rules. Repeatable.
   --min-confidence <n> Drop findings below this confidence (0..1). Default: 0
@@ -49,10 +53,13 @@ Options
   --quiet              Suppress the report; only set the exit code.
 
 Examples
-  testslop scan                          # what did the agent just do?
-  testslop scan --base main              # review a whole branch
-  testslop scan --base HEAD~1 --mutate   # add behavioural evidence
-  testslop scan --json > findings.json
+  testslop verify                        # the agent just finished: is it protected?
+  testslop verify --base main            # verify a whole branch
+  testslop scan                          # static only, milliseconds
+  testslop verify --json > findings.json
+
+Verification copies your working tree to a scratch directory and mutates only
+there. Your files are never written to.
 `;
 
 interface Options {
@@ -63,6 +70,8 @@ interface Options {
   json: boolean;
   mutate: boolean;
   mutateBudget: number;
+  stopAfter: number;
+  noLinkCheck: boolean;
   testCommand?: string;
   rule: string[];
   skipRule: string[];
@@ -91,6 +100,9 @@ function parse(argv: string[]): { command: string; options: Options } {
         json: { type: "boolean", default: false },
         mutate: { type: "boolean", default: false },
         "mutate-budget": { type: "string" },
+        budget: { type: "string" },
+        "stop-after": { type: "string" },
+        "no-link-check": { type: "boolean", default: false },
         "test-command": { type: "string" },
         rule: { type: "string", multiple: true },
         "skip-rule": { type: "string", multiple: true },
@@ -126,8 +138,11 @@ function parse(argv: string[]): { command: string; options: Options } {
     fail("--min-confidence must be a number between 0 and 1");
   }
 
-  const budget = v["mutate-budget"] !== undefined ? Number(v["mutate-budget"]) : 12;
-  if (!Number.isInteger(budget) || budget < 1) fail("--mutate-budget must be a positive integer");
+  const budgetRaw = v.budget ?? v["mutate-budget"];
+  const budget = budgetRaw !== undefined ? Number(budgetRaw) : 12;
+  if (!Number.isInteger(budget) || budget < 1) fail("--budget must be a positive integer");
+  const stopAfter = v["stop-after"] !== undefined ? Number(v["stop-after"]) : 4;
+  if (!Number.isInteger(stopAfter) || stopAfter < 1) fail("--stop-after must be a positive integer");
 
   const options: Options = {
     staged: v.staged ?? false,
@@ -135,6 +150,8 @@ function parse(argv: string[]): { command: string; options: Options } {
     json: v.json ?? false,
     mutate: v.mutate ?? false,
     mutateBudget: budget,
+    stopAfter,
+    noLinkCheck: v["no-link-check"] ?? false,
     rule: v.rule ?? [],
     skipRule: v["skip-rule"] ?? [],
     minConfidence,
@@ -163,9 +180,13 @@ async function main(): Promise<void> {
     process.stdout.write(renderRuleList(ALL_RULES));
     return;
   }
-  if (command !== "scan") {
-    fail(`unknown command "${command}". Try: testslop scan`);
+  if (command !== "scan" && command !== "verify") {
+    fail(`unknown command "${command}". Try: testslop verify`);
   }
+  // `verify` is `scan` plus behaviour verification. POC-02 promoted it to its own verb
+  // because mutation stopped being the optional extra: it is the only layer that found
+  // anything on independent agent output.
+  const verifying = command === "verify" || options.mutate;
 
   let changeSet;
   try {
@@ -198,16 +219,18 @@ async function main(): Promise<void> {
     minConfidence: options.minConfidence,
   });
 
-  if (options.mutate) {
-    const mutationStarted = Date.now();
-    const mutationFindings = await runMutationVerification(changeSet, {
+  if (verifying) {
+    const started = Date.now();
+    const report = await verifyChangedBehaviour(changeSet, {
       budget: options.mutateBudget,
+      stopAfterFindings: options.stopAfter,
+      validateLinking: !options.noLinkCheck,
       ...(options.testCommand !== undefined ? { testCommand: options.testCommand } : {}),
       onProgress: options.quiet || options.json ? undefined : (msg) => process.stderr.write(`  ${msg}\n`),
     });
-    result.findings = [...result.findings, ...mutationFindings];
+    result.findings = [...result.findings, ...behaviourFindings(report)];
     result.summary.findings = result.findings.length;
-    result.summary.mutationDurationMs = Date.now() - mutationStarted;
+    result.summary.mutationDurationMs = Date.now() - started;
     const { sortFindings } = await import("./core/pipeline.ts");
     result.findings = sortFindings(result.findings);
   }
