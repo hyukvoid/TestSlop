@@ -7,3 +7,4 @@ dist/
 work/
 corpus/generated/
 .vitest-temp/
+__pycache__/

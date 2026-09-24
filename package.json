@@ -22,7 +22,8 @@
     "evaluate": "node --experimental-strip-types scripts/evaluate.ts",
     "lint:compare": "node --experimental-strip-types scripts/lint-compare.ts",
     "demo": "npm run build && node scripts/hero-demo.mjs",
-    "demo:history": "npm run build && node scripts/replay-ms-history.mjs"
+    "demo:history": "npm run build && node scripts/replay-ms-history.mjs",
+    "assets": "python scripts/render-assets.py"
   },
   "dependencies": {
     "typescript": "5.9.2"

@@ -1,45 +1,28 @@
 # TestSlop
 
-## Your tests pass.
-## So does the wrong code.
+## Your tests pass. So does the wrong code.
+
+<p align="center">
+  <img src="assets/hero/testslop-hero.gif" width="816" alt="Terminal demo: an agent reports passing tests, then testslop twin shows ORIGINAL 3 / 3 tests passed and EVIL TWIN 3 / 3 tests passed, and prints the missing witness quantity = 1">
+</p>
 
 TestSlop finds one nearby implementation your tests also accept, then shows the input that separates it from your code.
 
-```text
-Agent (demo): implementation complete; tests passed.
-
-$ testslop twin
-TestSlop
-
-Your implementation:
-  quantity <= 0
-
-Evil Twin:
-  quantity <= 1
-
-ORIGINAL    3 / 3 tests passed  ✓
-EVIL TWIN   3 / 3 tests passed  ✓
-
-Your tests accept BOTH implementations.
-
-Missing witness:
-  quantity = 1
-```
-
-Run the same demo locally:
-
-```bash
-npm install
-npm run demo
-```
-
-## Try it on a diff
-
-Build TestSlop, then point it at the repository where your coding agent just finished:
+## Try it locally
 
 ```bash
 npm install
 npm run build
+npm run demo
+```
+
+TestSlop is not on npm; these commands run it from a local build. `npm run demo` runs the quantity-boundary demo shown above. `npm run demo:history` runs the real `vercel/ms` replay shown below.
+
+## Try it on a diff
+
+Point TestSlop at the repository where your coding agent just finished:
+
+```bash
 node dist/cli.js twin --cwd /path/to/your/project
 ```
 
@@ -62,7 +45,23 @@ An Evil Twin is a small, real code change near the diff under review. TestSlop a
 
 For example, `quantity <= 0` and `quantity <= 1` differ at `quantity = 1`. The report does not decide which implementation matches your product contract. It gives you a concrete place to look.
 
+<p align="center">
+  <img src="assets/hero/testslop-hero.png" width="816" alt="Static frame of the demo report: ORIGINAL 3 / 3 tests passed, EVIL TWIN 3 / 3 tests passed, both accepted, missing witness quantity = 1">
+</p>
+
+## How it works
+
+<p align="center">
+  <img src="assets/diagrams/how-it-works.png" width="460" alt="Flow diagram: agent changes code, tests pass, TestSlop creates an Evil Twin, runs the same tests, both pass, shows the missing witness">
+</p>
+
+Same tests, one nearby change, two implementations that both pass — and the input that would tell them apart.
+
 ## A real historical example
+
+<p align="center">
+  <img src="assets/screenshots/ms-historical-example.png" width="640" alt="Terminal capture of the vercel/ms replay: ORIGINAL 163 / 163 tests passed, EVIL TWIN 163 / 163 tests passed, missing witness ms = 31,557,600,000 ms, with the note that at exactly one year the output changes from 1y to 12mo">
+</p>
 
 During development, TestSlop found an exact-year boundary in the real [`ms` commit that added month formatting](https://github.com/vercel/ms/commit/3ba274e015722cbe1cdaa40f14f8c2954d8df0f3). The formatter tests checked one millisecond above a year, but not exactly one year. Changing `msAbs >= y` to `msAbs > y` still passes the preserved formatter suite; at `31,557,600,000` milliseconds the output moves from `1y` to `12mo`. The offline replay uses `npx vitest run --reporter=dot` with locked Vitest 3.2.4; both versions pass 163/163 tests.
 
