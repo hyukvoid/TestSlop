@@ -2,9 +2,8 @@
  * External-repository validation of changed-behaviour verification, using real human
  * commits.
  *
- * Goal C asked for the hypothesis to be exercised on codebases the author did not write,
- * with an independent agent. The agent arm is blocked: Codex hit its usage limit
- * mid-experiment and Claude's monthly quota is exhausted (docs/EVIDENCE-LOG.md E11, E15).
+ * This runner exercises the verifier on codebases the author did not write, using
+ * real human commits rather than an independent-agent benchmark.
  *
  * This is the available substitute and it answers a narrower but still useful question:
  * on repositories nobody wrote for TestSlop, does verification find unverified changed

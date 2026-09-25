@@ -288,7 +288,7 @@ describe("mock-only-test (experimental, off by default)", () => {
   it("is excluded from the default rule set, on the evidence of its real-world precision", () => {
     // 4 findings on zustand and 9 on axios, essentially all legitimate on review:
     // for middleware and lifecycle code, "was this called, how many times" is the
-    // observable behaviour. Documented in docs/POC-00-REPORT.md.
+    // observable behaviour.
     expect(DEFAULT_RULES.map((r) => r.id)).not.toContain("mock-only-test");
     expect(ALL_RULES.map((r) => r.id)).toContain("mock-only-test");
   });

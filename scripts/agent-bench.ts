@@ -207,7 +207,7 @@ export async function runTask(task: AgentTask, opts: BenchOptions = {}): Promise
     // `workspace-write` is the right policy but Codex's Windows sandbox helper
     // fails in this environment with `apply deny-read ACLs`, so the agent cannot
     // read or patch any file and every task records a false `agent-failed`.
-    // Verified over a full 361 s run before switching. See docs/EVIDENCE-LOG.md E03.
+    // The workspace-write policy failed to let the agent read or patch files in this environment.
     "-s", "danger-full-access",
     "--skip-git-repo-check",
     // MCP servers configured on this machine (shadcn, playwright, node_repl) add

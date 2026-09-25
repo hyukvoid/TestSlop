@@ -1,10 +1,6 @@
 /**
  * chai support.
  *
- * Selected over ava on measured evidence: chai accounts for 39.4% of the test files
- * with assertions across 22 surveyed repositories, versus 1.6% for ava. Supporting
- * it moves TestSlop's file coverage from 47.7% to 87.0%. See docs/EVIDENCE-LOG.md E04.
- *
  * The design constraint from the brief is that a new ecosystem must "integrate into
  * the existing normalized assertion model rather than introducing framework-specific
  * rules". So this module does exactly one thing: translate a chai chain into the

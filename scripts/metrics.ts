@@ -1,5 +1,5 @@
 /**
- * Aggregates every measurement into the numbers quoted in docs/POC-00-REPORT.md.
+ * Aggregates measurements produced by the evaluation and repository-analysis scripts.
  *
  * Reads the JSON artefacts produced by the other scripts rather than re-running
  * them, so the report and the raw data cannot drift apart.

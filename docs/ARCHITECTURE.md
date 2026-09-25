@@ -104,9 +104,7 @@ counterpart. Two passes:
    confidence penalty and print `paired by position; subject expression also
    changed` so a reviewer can discount them.
 
-Test cases themselves are matched by `describe > ... > test` title. This is the
-weakest part of the design and is documented as such in the report: renaming a
-test breaks the pairing, and parameterised suites that reuse a title collide.
+Test cases are matched by their describe > ... > test title. Renaming a test breaks the pairing, and parameterised suites with reused titles can collide.
 
 ## Cross-file correlation
 
@@ -195,16 +193,13 @@ Arg parsing uses `node:util parseArgs`; colour handling is ~15 lines in
 
 ---
 
-# POC-01 additions
+## Additional analysis details
 
-## Test-case pairing
+### Test-case pairing
 
 `src/core/pairing.ts`
 
-Every diff-aware rule needs to know which before-case corresponds to which
-after-case. POC-00 matched on the full `describe > … > title` and nothing else,
-which left a documented hole: rename a test while weakening it and the flagship rule
-saw an unrelated delete plus add.
+Every diff-aware rule needs to know which before-case corresponds to which after-case. Exact-title matching alone misses a renamed test whose assertion is also weakened, treating it as an unrelated delete plus add.
 
 Five layers, most certain first, each required to be unambiguous:
 
@@ -232,7 +227,7 @@ Pairing is computed once per file in `buildContext` and shared through
 `AnalysisContext.pairings`, so all rules agree on identity and cross-rule
 deduplication stays coherent.
 
-## chai
+### Chai
 
 `src/adapters/ts/chai.ts`
 
@@ -260,7 +255,7 @@ Jest extractor rejects any chain containing a chai connector (`to`, `be`, `have`
 without that guard both extractors claim `expect(x).to.equal(1)` and the Jest one wins
 with a meaningless `STRUCTURAL`.
 
-## Analysis coverage
+### Analysis coverage
 
 `src/core/coverage.ts`
 
@@ -268,5 +263,5 @@ Computed per scan and consumed by both reporters. When `complete` is false — a
 test file yielded no analysable assertion — the human reporter replaces its green
 headline with a warning and the JSON sets `analysisComplete: false`.
 
-This exists because POC-00 shipped the opposite: 256 ky test cases parsed, zero
-assertions analysed, reported as "No review-worthy changes found".
+This guards against a misleading clean result: a scan can parse many test cases
+while analyzing zero assertions. The report makes incomplete analysis explicit.

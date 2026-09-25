@@ -101,6 +101,8 @@ It uses a nearby test runner detected from the project (`vitest`, `jest`, `mocha
 
 `testslop scan` remains available as a secondary static check. `testslop verify` is the advanced view for inspecting multiple alternatives and their execution outcomes.
 
+Twin selection is deterministic; there is no confidence score or automatic suppression.
+
 ## Limits
 
 TestSlop searches a narrow set of nearby alternatives. A Twin is evidence that the current suite also accepts that alternate behavior; it is not automatically a bug.
@@ -108,17 +110,3 @@ TestSlop searches a narrow set of nearby alternatives. A Twin is evidence that t
 The tool cannot infer every product contract, input domain, or reachability constraint. "No Twin found" can mean the tests are tight, the diff has no supported shape, or the bounded search did not generate the relevant case.
 
 The test command runs with your normal user permissions inside a scratch copy. This protects the analyzed source from TestSlop's edits; it is not a security sandbox. TestSlop does not replace general-purpose mutation testing.
-
-## Research archive
-
-Three internal research phases rejected the broader verification-product claims. What remained interesting is the small developer-facing idea: a visible alternate implementation with a concrete witness.
-
-The reports, evidence log, benchmark definitions, regression tests, and raw records stay in the repository for anyone who wants the history:
-
-- [POC-00 report](docs/POC-00-REPORT.md)
-- [POC-01 report](docs/POC-01-REPORT.md)
-- [POC-02 report](docs/POC-02-REPORT.md)
-- [Evidence log](docs/EVIDENCE-LOG.md)
-- [Raw POC-02 records](corpus/poc02/raw/README.md)
-
-Jev is omitted from v0.1. Twin selection is deterministic; there is no confidence score or automatic suppression.

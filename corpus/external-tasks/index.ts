@@ -82,7 +82,6 @@ export const EXTERNAL_TASKS: ExternalTask[] = [
   // validator.js was the first choice and was dropped: its test suite requires
   // `npm run build` to produce the bundle the tests import, which the agent would have
   // to reproduce and which makes a failed build indistinguishable from a failed task.
-  // Recorded in docs/EVIDENCE-LOG.md E14.
   {
     id: "X04-ms-weeks",
     repo: "ms",

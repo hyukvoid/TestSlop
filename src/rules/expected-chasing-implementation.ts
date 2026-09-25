@@ -117,7 +117,7 @@ interface StringChange {
  *
  * Booleans were considered and rejected: with only two possible values, "production
  * flipped true->false and the test expectation flipped too" is satisfied by
- * coincidence far too often to carry evidence. Recorded in docs/EVIDENCE-LOG.md E05.
+ * coincidence far too often to carry evidence.
  */
 export function stringChanges(beforeSignals: ProductionSignal[], afterSignals: ProductionSignal[]): StringChange[] {
   const groupBy = (sigs: ProductionSignal[]): Map<string, ProductionSignal[]> => {
